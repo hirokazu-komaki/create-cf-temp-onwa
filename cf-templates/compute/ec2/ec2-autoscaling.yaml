@@ -405,48 +405,20 @@ Resources:
           Value: !Ref ProjectName
 
 Outputs:
+  # Auto Scaling Group Outputs
   AutoScalingGroupName:
     Description: Auto Scaling Group名
     Value: !Ref AutoScalingGroup
     Export:
-      Name: !Sub '${AWS::StackName}-ASG-Name'
+      Name: !Sub '${ProjectName}-${Environment}-ASG-Name'
   
   AutoScalingGroupArn:
     Description: Auto Scaling Group ARN
     Value: !Sub 'arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}'
     Export:
-      Name: !Sub '${AWS::StackName}-ASG-Arn'
+      Name: !Sub '${ProjectName}-${Environment}-ASG-Arn'
   
-  LaunchTemplateId:
-    Description: Launch Template ID
-    Value: !Ref EC2LaunchTemplate
-    Export:
-      Name: !Sub '${AWS::StackName}-LaunchTemplate-Id'
-  
-  EC2SecurityGroupId:
-    Description: EC2 Security Group ID
-    Value: !Ref EC2SecurityGroup
-    Export:
-      Name: !Sub '${AWS::StackName}-EC2-SG-Id'
-  
-  ALBSecurityGroupId:
-    Description: ALB Security Group ID
-    Value: !Ref ALBSecurityGroup
-    Export:
-      Name: !Sub '${AWS::StackName}-ALB-SG-Id'
-  
-  IAMRoleArn:
-    Description: EC2 IAM Role ARN
-    Value: !GetAtt EC2Role.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-IAM-Role-Arn'
-  
-  InstanceProfileArn:
-    Description: EC2 Instance Profile ARN
-    Value: !GetAtt EC2InstanceProfile.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-InstanceProfile-Arn'
-  # Cross-Stack Integration Outputs
+  # Launch Template Outputs
   LaunchTemplateId:
     Description: Launch Template ID
     Value: !Ref EC2LaunchTemplate
@@ -458,7 +430,21 @@ Outputs:
     Value: !GetAtt EC2LaunchTemplate.LatestVersionNumber
     Export:
       Name: !Sub '${ProjectName}-${Environment}-LaunchTemplate-Version'
-
+  
+  # Security Group Outputs
+  EC2SecurityGroupId:
+    Description: EC2 Security Group ID
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2-SG-Id'
+  
+  ALBSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ALB-SG-Id'
+  
+  # IAM Outputs
   IAMRoleArn:
     Description: EC2 IAM Role ARN
     Value: !GetAtt EC2Role.Arn
@@ -471,6 +457,7 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}-${Environment}-InstanceProfile-Arn'
 
+  # CloudWatch Logs Output
   EC2LogGroupName:
     Description: EC2 Log Group Name
     Value: !Ref EC2LogGroup
