@@ -4,7 +4,7 @@ Description: 'EC2 Auto Scaling ポリシーとCloudWatchアラーム - コスト
 Parameters:
   ProjectName:
     Type: String
-    Description: プロジェクト名
+    Description: プロジェクトの名前
   
   Environment:
     Type: String
