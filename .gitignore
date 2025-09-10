@@ -1,0 +1,5 @@
+# 環境情報を除外
+*.env
+.env.*
+config/secrets.json
+aws-credentials.json
