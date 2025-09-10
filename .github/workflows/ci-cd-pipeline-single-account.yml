@@ -15,7 +15,7 @@ on:
       - 'cf-templates/**/*.yml'
 
 env:
-  AWS_DEFAULT_REGION: us-east-1
+  AWS_DEFAULT_REGION: ap-northeast-1
   PYTHON_VERSION: '3.12'
   DEPLOYMENT_MODE: 'single-account'
 
@@ -149,16 +149,53 @@ jobs:
             
             if config_path.parts[0] == 'cf-templates':
                 template_dir = config_path.parent
-                service_name = config_path.parts[-2] if len(config_path.parts) > 2 else config_path.stem.split('-')[0]
+                # サービス名の決定（ディレクトリ名から）
+                if len(config_path.parts) > 2:
+                    service_name = config_path.parts[-2]
+                    # web-applicationのような複合名の場合の特別処理
+                    if service_name == 'web-application':
+                        service_name = 'web-app'
+                else:
+                    service_name = config_path.stem.split('-')[0]
                 
-                possible_templates = [
-                    template_dir / f"{service_name}-template.yaml",
-                    template_dir / f"{service_name}-template.yml",
-                    template_dir / f"{service_name}.yaml",
-                    template_dir / f"{service_name}.yml",
+                # 設定ファイル名から推測されるテンプレート名のパターンを追加
+                config_stem = config_path.stem  # "ec2-config-basic"
+                
+                # サービス固有のマッピングパターンを定義
+                service_specific_patterns = {
+                    'ec2': ['ec2-autoscaling', 'ec2-scaling-policies'],
+                    'lambda': ['lambda-function', 'lambda-layer'],
+                    'config': ['config-setup'],
+                    'iam': ['iam-roles-policies'],
+                    'kms': ['kms-keys'],
+                    'organization': ['organization-setup'],
+                    'microservices': ['microservices-pattern'],
+                    'web-app': ['web-app-pattern'],
+                    'data-processing': ['data-processing-pattern']
+                }
+                
+                # テンプレートパターンの決定
+                if service_name in service_specific_patterns:
+                    template_patterns = service_specific_patterns[service_name]
+                else:
+                    # 標準的なパターン
+                    template_patterns = [f"{service_name}-template"]
+                
+                # 汎用パターンも追加
+                template_patterns.extend([f"{service_name}-template", service_name])
+                
+                possible_templates = []
+                for pattern in template_patterns:
+                    possible_templates.extend([
+                        template_dir / f"{pattern}.yaml",
+                        template_dir / f"{pattern}.yml"
+                    ])
+                
+                # 汎用的なテンプレート名も追加
+                possible_templates.extend([
                     template_dir / "template.yaml",
                     template_dir / "template.yml"
-                ]
+                ])
                 
                 for template_path in possible_templates:
                     if template_path.exists():
@@ -287,9 +324,12 @@ jobs:
                 'ParameterValue': str(value)
             })
         
-        with open('cf-parameters.json', 'w') as f:
+        # テンプレート固有のパラメータファイル名を生成
+        param_file = 'cf-parameters-${{ matrix.template.service }}.json'
+        with open(param_file, 'w') as f:
             json.dump(parameters, f, indent=2)
         
+        print(f"Generated parameters file: {param_file}")
         print("Generated CloudFormation parameters:")
         print(json.dumps(parameters, indent=2))
         EOF
@@ -303,12 +343,14 @@ jobs:
     - name: Test template deployment (dry-run)
       run: |
         STACK_NAME="test-${{ matrix.template.service }}-$(date +%s)"
+        PARAM_FILE="cf-parameters-${{ matrix.template.service }}.json"
         echo "Testing deployment for stack: $STACK_NAME"
+        echo "Using parameters file: $PARAM_FILE"
         
         aws cloudformation create-change-set \
           --stack-name $STACK_NAME \
           --template-body file://${{ matrix.template.template }} \
-          --parameters file://cf-parameters.json \
+          --parameters file://$PARAM_FILE \
           --change-set-name test-changeset \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --tags Key=TestRun,Value=true Key=GitHubAction,Value=true \
@@ -473,18 +515,26 @@ jobs:
                 'ParameterValue': str(value)
             })
         
-        with open('cf-parameters.json', 'w') as f:
+        # テンプレート固有のパラメータファイル名を生成
+        param_file = 'cf-parameters-${{ matrix.template.service }}.json'
+        with open(param_file, 'w') as f:
             json.dump(parameters, f, indent=2)
+        
+        print(f"Generated parameters file: {param_file}")
+        print("Parameters:")
+        print(json.dumps(parameters, indent=2))
         EOF
 
     - name: Deploy CloudFormation stack
       run: |
         # 単一アカウント用のスタック命名規則
         STACK_NAME="${{ needs.validate-and-map.outputs.target-environment }}-${{ matrix.template.service }}-$(echo ${{ github.sha }} | cut -c1-8)"
+        PARAM_FILE="cf-parameters-${{ matrix.template.service }}.json"
         
         echo "Deploying stack: $STACK_NAME (Single Account Mode)"
         echo "Template: ${{ matrix.template.template }}"
         echo "Config: ${{ matrix.template.config }}"
+        echo "Parameters file: $PARAM_FILE"
         echo "Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
         
         # スタックの存在確認
@@ -500,7 +550,7 @@ jobs:
         aws cloudformation $OPERATION \
           --stack-name $STACK_NAME \
           --template-body file://${{ matrix.template.template }} \
-          --parameters file://cf-parameters.json \
+          --parameters file://$PARAM_FILE \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
           --tags \
             Key=DeployedBy,Value=GitHubActions \
