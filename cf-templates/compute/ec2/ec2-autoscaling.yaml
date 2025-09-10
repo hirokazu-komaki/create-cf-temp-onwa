@@ -29,41 +29,41 @@ Metadata:
 
 Parameters:
 
-  # Cross-Stack Import Parameters
-  ImportVPCId:
-    Type: String
-    Description: Import VPC ID from networking-vpc stack
-    Default: !ImportValue
-      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+  # Cross-Stack Import Parameters (コメントアウト - 未使用のため)
+  # ImportVPCId:
+  #   Type: String
+  #   Description: Import VPC ID from networking-vpc stack
+  #   Default: !ImportValue
+  #     Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
 
-  ImportPrivateSubnets:
-    Type: String
-    Description: Import Private Subnets from networking-vpc stack
-    Default: !ImportValue
-      Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
+  # ImportPrivateSubnets:
+  #   Type: String
+  #   Description: Import Private Subnets from networking-vpc stack
+  #   Default: !ImportValue
+  #     Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
 
-  ImportPublicSubnets:
-    Type: String
-    Description: Import Public Subnets from networking-vpc stack (optional)
-    Default: ''
+  # ImportPublicSubnets:
+  #   Type: String
+  #   Description: Import Public Subnets from networking-vpc stack (optional)
+  #   Default: ''
 
-  ImportExecutionRoleArn:
-    Type: String
-    Description: Import Execution Role ARN from foundation-iam stack
-    Default: !ImportValue
-      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+  # ImportExecutionRoleArn:
+  #   Type: String
+  #   Description: Import Execution Role ARN from foundation-iam stack
+  #   Default: !ImportValue
+  #     Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
 
-  ImportInstanceProfileArn:
-    Type: String
-    Description: Import Instance Profile ARN from foundation-iam stack
-    Default: !ImportValue
-      Fn::Sub: '${ProjectName}-${Environment}-instance-profile-arn'
+  # ImportInstanceProfileArn:
+  #   Type: String
+  #   Description: Import Instance Profile ARN from foundation-iam stack
+  #   Default: !ImportValue
+  #     Fn::Sub: '${ProjectName}-${Environment}-instance-profile-arn'
 
-  ImportApplicationKMSKeyArn:
-    Type: String
-    Description: Import Application KMS Key ARN from foundation-kms stack
-    Default: !ImportValue
-      Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
+  # ImportApplicationKMSKeyArn:
+  #   Type: String
+  #   Description: Import Application KMS Key ARN from foundation-kms stack
+  #   Default: !ImportValue
+  #     Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
 
   ProjectName:
     Type: String
@@ -144,19 +144,20 @@ Mappings:
       MaxSize: 10
       DesiredCapacity: 3
   
-  EnvironmentSettings:
-    dev:
-      InstanceProfile: EC2-Dev-InstanceProfile
-      SecurityGroupSuffix: dev
-      EnableTerminationProtection: 'false'
-    staging:
-      InstanceProfile: EC2-Staging-InstanceProfile
-      SecurityGroupSuffix: staging
-      EnableTerminationProtection: 'false'
-    prod:
-      InstanceProfile: EC2-Prod-InstanceProfile
-      SecurityGroupSuffix: prod
-      EnableTerminationProtection: 'true'
+  # EnvironmentSettings (コメントアウト - 未使用のため)
+  # EnvironmentSettings:
+  #   dev:
+  #     InstanceProfile: EC2-Dev-InstanceProfile
+  #     SecurityGroupSuffix: dev
+  #     EnableTerminationProtection: 'false'
+  #   staging:
+  #     InstanceProfile: EC2-Staging-InstanceProfile
+  #     SecurityGroupSuffix: staging
+  #     EnableTerminationProtection: 'false'
+  #   prod:
+  #     InstanceProfile: EC2-Prod-InstanceProfile
+  #     SecurityGroupSuffix: prod
+  #     EnableTerminationProtection: 'true'
 
 Resources:
   # IAM Role for EC2 instances
@@ -369,10 +370,10 @@ Resources:
       MinSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MinSize]
       MaxSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MaxSize]
       DesiredCapacity: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, DesiredCapacity]
+      DefaultCooldown: 300
       VPCZoneIdentifier: !Ref SubnetIds
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
-      DefaultCooldown: 300
       TerminationPolicies:
         - OldestInstance
       Tags:
