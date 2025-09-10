@@ -1,0 +1,9 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "dev",
+  "DomainName": "dev.example.com",
+  "ConfigurationPattern": "Basic",
+  "CreatePrivateHostedZone": "false",
+  "EnableHealthChecks": "false",
+  "EnableQueryLogging": "false"
+}

@@ -1,0 +1,23 @@
+{
+  "Parameters": {
+    "APIPattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "APIName": "my-basic-api",
+    "APIType": "REST",
+    "EndpointType": "REGIONAL",
+    "EnableCaching": "false",
+    "EnableLogging": "false",
+    "EnableXRayTracing": "false",
+    "EnableCORS": "true",
+    "ThrottlingBurstLimit": 100,
+    "ThrottlingRateLimit": 50
+  },
+  "Tags": {
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "CostOptimization"
+  },
+  "Description": "開発環境用の基本的なAPI Gateway設定 - シンプルなREST API"
+}

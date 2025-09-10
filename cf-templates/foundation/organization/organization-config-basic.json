@@ -1,0 +1,15 @@
+{
+  "Parameters": {
+    "OrganizationPattern": "Basic",
+    "MasterAccountName": "MyOrg-Master",
+    "EnableAllFeatures": "false",
+    "EnableSCP": "false",
+    "CreateOUs": "false"
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Infrastructure",
+    "WellArchitected": "OperationalExcellence"
+  },
+  "Description": "基本的なAWS Organizations設定 - シンプルな組織構造"
+}

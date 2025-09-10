@@ -1,0 +1,13 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "staging",
+  "DomainName": "staging.example.com",
+  "ConfigurationPattern": "Advanced",
+  "CreatePrivateHostedZone": "true",
+  "VPCId": "vpc-12345678",
+  "EnableHealthChecks": "true",
+  "PrimaryEndpoint": "1.2.3.4",
+  "SecondaryEndpoint": "5.6.7.8",
+  "HealthCheckPath": "/health",
+  "EnableQueryLogging": "false"
+}

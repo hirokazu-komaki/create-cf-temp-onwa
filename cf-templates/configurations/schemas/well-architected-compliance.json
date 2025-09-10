@@ -1,0 +1,111 @@
+{
+  "wellArchitectedFramework": {
+    "version": "2023-04",
+    "pillars": {
+      "operationalExcellence": {
+        "name": "Operational Excellence",
+        "description": "The ability to support development and run workloads effectively",
+        "bestPractices": {
+          "OPS01-BP01": "Evaluate external customer needs",
+          "OPS01-BP02": "Evaluate internal customer needs",
+          "OPS01-BP03": "Evaluate governance requirements",
+          "OPS01-BP04": "Evaluate compliance requirements",
+          "OPS02-BP01": "Identify key performance indicators",
+          "OPS02-BP02": "Identify key business metrics",
+          "OPS03-BP01": "Evaluate tradeoffs between competing interests",
+          "OPS03-BP02": "Manage benefits and risks",
+          "OPS04-BP01": "Implement application telemetry",
+          "OPS04-BP02": "Implement and configure workload telemetry",
+          "OPS04-BP03": "Implement user activity telemetry",
+          "OPS04-BP04": "Implement dependency telemetry",
+          "OPS04-BP05": "Implement transaction traceability"
+        }
+      },
+      "security": {
+        "name": "Security",
+        "description": "The ability to protect data, systems, and assets",
+        "bestPractices": {
+          "SEC01-BP01": "Separate workloads using accounts",
+          "SEC01-BP02": "Secure account root user and properties",
+          "SEC01-BP03": "Identify and validate control objectives",
+          "SEC01-BP04": "Stay up to date with security threats",
+          "SEC01-BP05": "Stay up to date with security recommendations",
+          "SEC01-BP06": "Automate testing and validation of security controls",
+          "SEC01-BP07": "Identify threats and prioritize mitigations",
+          "SEC02-BP01": "Use strong identity foundation",
+          "SEC02-BP02": "Use temporary credentials",
+          "SEC02-BP03": "Store and use secrets securely",
+          "SEC02-BP04": "Rely on a centralized identity provider",
+          "SEC02-BP05": "Audit and rotate credentials periodically",
+          "SEC02-BP06": "Employ user groups and attributes"
+        }
+      },
+      "reliability": {
+        "name": "Reliability",
+        "description": "The ability of a workload to perform its intended function correctly and consistently",
+        "bestPractices": {
+          "REL01-BP01": "Be aware of service quotas and constraints",
+          "REL01-BP02": "Manage service quotas across accounts and regions",
+          "REL01-BP03": "Accommodate fixed service quotas and constraints through architecture",
+          "REL01-BP04": "Monitor and manage quotas",
+          "REL01-BP05": "Automate quota management",
+          "REL01-BP06": "Use fault isolation to protect your workload",
+          "REL02-BP01": "Use highly available network connectivity for your workload public endpoints",
+          "REL02-BP02": "Provision redundant connectivity between private networks",
+          "REL02-BP03": "Ensure IP subnet allocation accounts for expansion and availability",
+          "REL02-BP04": "Prefer hub-and-spoke topologies over many-to-many mesh"
+        }
+      },
+      "performanceEfficiency": {
+        "name": "Performance Efficiency",
+        "description": "The ability to use computing resources efficiently to meet system requirements",
+        "bestPractices": {
+          "PERF01-BP01": "Learn about and understand available cloud services and features",
+          "PERF01-BP02": "Use guidance from your cloud provider or an appropriate partner",
+          "PERF01-BP03": "Factor cost requirements into decisions",
+          "PERF01-BP04": "Use policies or reference architectures",
+          "PERF01-BP05": "Use proof of concepts and load testing for performance",
+          "PERF02-BP01": "Select the best performing architecture",
+          "PERF02-BP02": "Select compute solutions for your workload",
+          "PERF02-BP03": "Select storage solutions for your workload",
+          "PERF02-BP04": "Select database solutions for your workload",
+          "PERF02-BP05": "Select network solutions for your workload"
+        }
+      },
+      "costOptimization": {
+        "name": "Cost Optimization",
+        "description": "The ability to run systems to deliver business value at the lowest price point",
+        "bestPractices": {
+          "COST01-BP01": "Establish a cost optimization function",
+          "COST01-BP02": "Establish a partnership between finance and technology",
+          "COST01-BP03": "Establish cloud budgets and forecasts",
+          "COST01-BP04": "Implement cost awareness in your organizational processes",
+          "COST01-BP05": "Report and notify on cost optimization",
+          "COST01-BP06": "Monitor cost proactively",
+          "COST01-BP07": "Keep up to date with new service releases",
+          "COST02-BP01": "Develop policies based on your organization requirements",
+          "COST02-BP02": "Implement goals and targets",
+          "COST02-BP03": "Implement an account structure",
+          "COST02-BP04": "Implement groups and roles",
+          "COST02-BP05": "Implement cost controls"
+        }
+      },
+      "sustainability": {
+        "name": "Sustainability",
+        "description": "The ability to continually improve sustainability impacts",
+        "bestPractices": {
+          "SUS01-BP01": "Choose Region based on both business requirements and sustainability goals",
+          "SUS01-BP02": "User behavior patterns can help you identify improvements",
+          "SUS01-BP03": "Implement software and architecture patterns",
+          "SUS01-BP04": "Understand the performance of your workload components",
+          "SUS01-BP05": "Use the minimum amount of hardware to meet your needs",
+          "SUS01-BP06": "Use managed services",
+          "SUS02-BP01": "Scale workload infrastructure dynamically",
+          "SUS02-BP02": "Align SLA requirements",
+          "SUS02-BP03": "Stop the creation and maintenance of unused assets",
+          "SUS02-BP04": "Optimize geographic placement of workloads based on their networking requirements"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "Parameters": {
+    "PatternType": "Microservices",
+    "PatternComplexity": "Enterprise",
+    "ProjectName": "EnterpriseMicroservices",
+    "Environment": "prod",
+    "Region": "us-east-1",
+    "AvailabilityZones": ["us-east-1a", "us-east-1b", "us-east-1c"],
+    
+    "VPCConfig": {
+      "CidrBlock": "10.0.0.0/16",
+      "SubnetPattern": "Enterprise",
+      "EnableNatGateway": true,
+      "SingleNatGateway": false,
+      "EnableVPCFlowLogs": true,
+      "EnableTransitGateway": true
+    },
+    
+    "ContainerConfig": {
+      "Platform": "EKS",
+      "KubernetesVersion": "1.28",
+      "NodeGroupInstanceTypes": ["m5.large", "m5.xlarge"],
+      "MinNodes": 3,
+      "MaxNodes": 20,
+      "DesiredNodes": 6,
+      "EnableServiceMesh": true,
+      "ServiceMeshType": "AppMesh",
+      "EnableServiceDiscovery": true,
+      "ServiceDiscoveryNamespace": "enterprise.local",
+      "EnableAutoScaling": true,
+      "EnableSpotInstances": true,
+      "SpotInstancePercentage": 30
+    },
+    
+    "LoadBalancerConfig": {
+      "Type": "ApplicationLoadBalancer",
+      "Scheme": "internet-facing",
+      "EnableSSL": true,
+      "CertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+      "EnableWAF": true,
+      "WAFWebACLArn": "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/enterprise-waf/12345678-1234-1234-1234-123456789012",
+      "EnableAccessLogs": true
+    },
+    
+    "APIGatewayConfig": {
+      "Type": "REST",
+      "EndpointType": "REGIONAL",
+      "EnableCaching": true,
+      "CachingTTL": 600,
+      "EnableXRayTracing": true,
+      "EnableAPIKey": true,
+      "EnableUsagePlan": true,
+      "EnableWAF": true,
+      "EnableCognito": true,
+      "CognitoUserPoolArn": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_XXXXXXXXX"
+    },
+    
+    "DatabaseConfig": {
+      "Services": [
+        {
+          "ServiceName": "user-service",
+          "Engine": "postgres",
+          "EngineVersion": "15.4",
+          "InstanceClass": "db.r5.xlarge",
+          "AllocatedStorage": 500,
+          "EnableEncryption": true,
+          "EnablePerformanceInsights": true
+        },
+        {
+          "ServiceName": "order-service",
+          "Engine": "mysql",
+          "EngineVersion": "8.0.35",
+          "InstanceClass": "db.r5.xlarge",
+          "AllocatedStorage": 500,
+          "EnableEncryption": true,
+          "EnablePerformanceInsights": true
+        },
+        {
+          "ServiceName": "catalog-service",
+          "Engine": "dynamodb",
+          "BillingMode": "ON_DEMAND",
+          "EnableEncryption": true,
+          "EnablePointInTimeRecovery": true
+        }
+      ],
+      "EnableMultiAZ": true,
+      "EnableBackup": true,
+      "BackupRetentionPeriod": 30,
+      "EnableCrossRegionBackup": true
+    },
+    
+    "MessageQueueConfig": {
+      "EnableSQS": true,
+      "EnableSNS": true,
+      "EnableEventBridge": true,
+      "EnableKinesis": true,
+      "DeadLetterQueueEnabled": true,
+      "MessageRetentionPeriod": 1209600,
+      "EnableEncryption": true,
+      "KMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    },
+    
+    "CacheConfig": {
+      "Engine": "redis",
+      "EngineVersion": "7.0",
+      "NodeType": "cache.r6g.xlarge",
+      "NumCacheNodes": 6,
+      "EnableClusterMode": true,
+      "EnableEncryption": true,
+      "EnableBackup": true,
+      "SnapshotRetentionLimit": 30
+    },
+    
+    "MonitoringConfig": {
+      "EnableCloudWatch": true,
+      "EnableXRayTracing": true,
+      "EnableContainerInsights": true,
+      "LogRetentionDays": 365,
+      "EnableDashboard": true,
+      "EnableServiceMap": true,
+      "EnableAnomalyDetection": true,
+      "EnableApplicationInsights": true,
+      "EnablePrometheus": true,
+      "EnableGrafana": true
+    },
+    
+    "SecurityConfig": {
+      "EnableGuardDuty": true,
+      "EnableSecurityHub": true,
+      "EnableConfig": true,
+      "EnableCloudTrail": true,
+      "EnableVPCFlowLogs": true,
+      "EnableKMSEncryption": true,
+      "EnableSecretsManager": true,
+      "EnableParameterStore": true
+    }
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Production",
+    "Environment": "Production",
+    "Architecture": "Microservices",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズマイクロサービスパターン - EKS、サービスメッシュ、完全なセキュリティと監視"
+}

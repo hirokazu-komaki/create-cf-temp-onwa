@@ -1,0 +1,10 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "staging",
+  "VpcCidr": "10.0.0.0/16",
+  "SubnetPattern": "Advanced",
+  "EnableDnsHostnames": "true",
+  "EnableDnsSupport": "true",
+  "EnableNatGateway": "true",
+  "SingleNatGateway": "false"
+}

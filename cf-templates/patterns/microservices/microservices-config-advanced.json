@@ -1,0 +1,90 @@
+{
+  "Parameters": {
+    "PatternType": "Microservices",
+    "PatternComplexity": "Advanced",
+    "ProjectName": "MyMicroservices",
+    "Environment": "staging",
+    "Region": "us-east-1",
+    "AvailabilityZones": ["us-east-1a", "us-east-1b"],
+    
+    "VPCConfig": {
+      "CidrBlock": "10.2.0.0/16",
+      "SubnetPattern": "Advanced",
+      "EnableNatGateway": true,
+      "SingleNatGateway": false
+    },
+    
+    "ContainerConfig": {
+      "Platform": "ECS",
+      "LaunchType": "FARGATE",
+      "EnableServiceDiscovery": true,
+      "ServiceDiscoveryNamespace": "microservices.local",
+      "EnableAutoScaling": true,
+      "MinCapacity": 2,
+      "MaxCapacity": 10,
+      "TargetCPUUtilization": 70
+    },
+    
+    "LoadBalancerConfig": {
+      "Type": "ApplicationLoadBalancer",
+      "Scheme": "internal",
+      "EnableSSL": true,
+      "CertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+    },
+    
+    "APIGatewayConfig": {
+      "Type": "REST",
+      "EndpointType": "REGIONAL",
+      "EnableCaching": true,
+      "CachingTTL": 300,
+      "EnableXRayTracing": true,
+      "EnableAPIKey": true,
+      "EnableUsagePlan": true
+    },
+    
+    "DatabaseConfig": {
+      "Services": [
+        {
+          "ServiceName": "user-service",
+          "Engine": "postgres",
+          "InstanceClass": "db.t3.medium",
+          "AllocatedStorage": 100
+        },
+        {
+          "ServiceName": "order-service",
+          "Engine": "mysql",
+          "InstanceClass": "db.t3.medium",
+          "AllocatedStorage": 100
+        }
+      ],
+      "EnableMultiAZ": true,
+      "EnableBackup": true,
+      "BackupRetentionPeriod": 7
+    },
+    
+    "MessageQueueConfig": {
+      "EnableSQS": true,
+      "EnableSNS": true,
+      "EnableEventBridge": true,
+      "DeadLetterQueueEnabled": true,
+      "MessageRetentionPeriod": 1209600
+    },
+    
+    "MonitoringConfig": {
+      "EnableCloudWatch": true,
+      "EnableXRayTracing": true,
+      "EnableContainerInsights": true,
+      "LogRetentionDays": 30,
+      "EnableDashboard": true,
+      "EnableServiceMap": true
+    }
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "Architecture": "Microservices",
+    "WellArchitected": "Reliability,PerformanceEfficiency,OperationalExcellence"
+  },
+  "Description": "ステージング環境用の高度なマイクロサービスパターン - ECS Fargate、サービスディスカバリ、メッセージング"
+}

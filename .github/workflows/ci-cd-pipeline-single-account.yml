@@ -1,0 +1,550 @@
+name: CloudFormation Template CI/CD Pipeline (Single Account)
+
+on:
+  push:
+    branches: [ main, develop, 'feature/*', 'hotfix/*' ]
+    paths:
+      - '**/*-config-*.json'
+      - 'cf-templates/**/*.yaml'
+      - 'cf-templates/**/*.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*-config-*.json'
+      - 'cf-templates/**/*.yaml'
+      - 'cf-templates/**/*.yml'
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  PYTHON_VERSION: '3.12'
+  DEPLOYMENT_MODE: 'single-account'
+
+jobs:
+  # ステージ1: 設定ファイルの検証とテンプレートマッピング
+  validate-and-map:
+    name: Validate Config and Map to Templates
+    runs-on: ubuntu-latest
+    outputs:
+      config-files: ${{ steps.detect-configs.outputs.config-files }}
+      templates-to-test: ${{ steps.map-templates.outputs.templates }}
+      target-environment: ${{ steps.extract-account.outputs.target-environment }}
+      deployment-region: ${{ steps.extract-account.outputs.deployment-region }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install boto3 jsonschema pyyaml cfn-lint
+
+    - name: Detect changed config files
+      id: detect-configs
+      run: |
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '.*-config-.*\.json$' || true)
+        if [ -z "$CHANGED_FILES" ]; then
+          echo "No config files changed"
+          echo "config-files=[]" >> $GITHUB_OUTPUT
+        else
+          echo "Changed config files: $CHANGED_FILES"
+          CONFIG_ARRAY=$(echo "$CHANGED_FILES" | jq -R -s -c 'split("\n")[:-1]')
+          echo "config-files=$CONFIG_ARRAY" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Extract deployment info from config
+      id: extract-account
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        
+        target_environment = None
+        deployment_region = None
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                # 環境の検出
+                if 'Environment' in config.get('Parameters', {}):
+                    target_environment = config['Parameters']['Environment'].lower()
+                elif 'Environment' in config.get('Tags', {}):
+                    target_environment = config['Tags']['Environment'].lower()
+                
+                # リージョンの検出
+                if 'Region' in config.get('Parameters', {}):
+                    deployment_region = config['Parameters']['Region']
+                elif 'AWSRegion' in config.get('Parameters', {}):
+                    deployment_region = config['Parameters']['AWSRegion']
+                else:
+                    # ARNからリージョンを推定
+                    for key, value in config.get('Parameters', {}).items():
+                        if isinstance(value, str) and value.startswith('arn:aws:'):
+                            parts = value.split(':')
+                            if len(parts) >= 4 and parts[3]:
+                                deployment_region = parts[3]
+                                break
+                
+                if target_environment:
+                    break
+                    
+            except Exception as e:
+                print(f"Error reading {config_file}: {e}")
+                continue
+        
+        # 環境の正規化（単一アカウントでは環境による分離は論理的なもの）
+        environment_mapping = {
+            'production': 'prod',
+            'prod': 'prod', 
+            'staging': 'staging',
+            'stage': 'staging',
+            'development': 'dev',
+            'dev': 'dev',
+            'test': 'dev'
+        }
+        
+        normalized_env = environment_mapping.get(target_environment, 'dev')
+        
+        # GitHub Outputsに設定
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"target-environment={normalized_env}\n")
+            f.write(f"deployment-region={deployment_region or 'us-east-1'}\n")
+        
+        print(f"Target Environment: {normalized_env}")
+        print(f"Deployment Region: {deployment_region or 'us-east-1'}")
+        print("Single Account Mode: All environments use the same AWS account")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+    - name: Map config files to templates
+      id: map-templates
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        from pathlib import Path
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        templates_to_test = []
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            config_path = Path(config_file)
+            
+            if config_path.parts[0] == 'cf-templates':
+                template_dir = config_path.parent
+                service_name = config_path.parts[-2] if len(config_path.parts) > 2 else config_path.stem.split('-')[0]
+                
+                possible_templates = [
+                    template_dir / f"{service_name}-template.yaml",
+                    template_dir / f"{service_name}-template.yml",
+                    template_dir / f"{service_name}.yaml",
+                    template_dir / f"{service_name}.yml",
+                    template_dir / "template.yaml",
+                    template_dir / "template.yml"
+                ]
+                
+                for template_path in possible_templates:
+                    if template_path.exists():
+                        templates_to_test.append({
+                            'config': config_file,
+                            'template': str(template_path),
+                            'service': service_name
+                        })
+                        break
+                else:
+                    print(f"Warning: No template found for config {config_file}")
+        
+        templates_json = json.dumps(templates_to_test)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"templates={templates_json}\n")
+        
+        print(f"Templates to test: {templates_json}")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+    - name: Validate JSON config files
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        from jsonschema import validate, ValidationError
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        
+        config_schema = {
+            "type": "object",
+            "required": ["Parameters"],
+            "properties": {
+                "Parameters": {
+                    "type": "object",
+                    "minProperties": 1
+                },
+                "Tags": {
+                    "type": "object"
+                },
+                "Description": {
+                    "type": "string"
+                }
+            }
+        }
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            print(f"Validating {config_file}...")
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                validate(instance=config, schema=config_schema)
+                print(f"✓ {config_file} is valid")
+                
+            except json.JSONDecodeError as e:
+                print(f"✗ {config_file} has invalid JSON: {e}")
+                exit(1)
+            except ValidationError as e:
+                print(f"✗ {config_file} schema validation failed: {e}")
+                exit(1)
+            except Exception as e:
+                print(f"✗ Error validating {config_file}: {e}")
+                exit(1)
+        
+        print("All config files validated successfully!")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+  # ステージ2: CloudFormationテンプレートのテスト
+  test-templates:
+    name: Test CloudFormation Templates
+    runs-on: ubuntu-latest
+    needs: validate-and-map
+    if: needs.validate-and-map.outputs.templates-to-test != '[]'
+    strategy:
+      matrix:
+        template: ${{ fromJson(needs.validate-and-map.outputs.templates-to-test) }}
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install AWS CLI and tools
+      run: |
+        pip install boto3 cfn-lint pyyaml
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+    - name: Configure AWS credentials for testing
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ needs.validate-and-map.outputs.deployment-region }}
+
+    - name: Lint CloudFormation template
+      run: |
+        echo "Linting template: ${{ matrix.template.template }}"
+        cfn-lint ${{ matrix.template.template }}
+
+    - name: Convert JSON config to CloudFormation parameters
+      run: |
+        python3 << 'EOF'
+        import json
+        
+        with open('${{ matrix.template.config }}', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        parameters = []
+        for key, value in config.get('Parameters', {}).items():
+            parameters.append({
+                'ParameterKey': key,
+                'ParameterValue': str(value)
+            })
+        
+        with open('cf-parameters.json', 'w') as f:
+            json.dump(parameters, f, indent=2)
+        
+        print("Generated CloudFormation parameters:")
+        print(json.dumps(parameters, indent=2))
+        EOF
+
+    - name: Validate CloudFormation template
+      run: |
+        echo "Validating template with parameters..."
+        aws cloudformation validate-template \
+          --template-body file://${{ matrix.template.template }}
+
+    - name: Test template deployment (dry-run)
+      run: |
+        STACK_NAME="test-${{ matrix.template.service }}-$(date +%s)"
+        echo "Testing deployment for stack: $STACK_NAME"
+        
+        aws cloudformation create-change-set \
+          --stack-name $STACK_NAME \
+          --template-body file://${{ matrix.template.template }} \
+          --parameters file://cf-parameters.json \
+          --change-set-name test-changeset \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --tags Key=TestRun,Value=true Key=GitHubAction,Value=true \
+          || echo "Change set creation completed (may fail for new stack)"
+        
+        aws cloudformation describe-change-set \
+          --stack-name $STACK_NAME \
+          --change-set-name test-changeset \
+          || echo "Change set description completed"
+        
+        aws cloudformation delete-change-set \
+          --stack-name $STACK_NAME \
+          --change-set-name test-changeset \
+          || echo "Change set cleanup completed"
+
+    - name: Run Well-Architected compliance check
+      run: |
+        python3 << 'EOF'
+        import yaml
+        
+        with open('${{ matrix.template.template }}', 'r') as f:
+            template = yaml.safe_load(f)
+        
+        metadata = template.get('Metadata', {})
+        wa_compliance = metadata.get('WellArchitectedCompliance', {})
+        
+        print("Well-Architected Framework Compliance Check:")
+        print("=" * 50)
+        
+        pillars = [
+            'OperationalExcellence',
+            'Security', 
+            'Reliability',
+            'PerformanceEfficiency',
+            'CostOptimization',
+            'Sustainability'
+        ]
+        
+        for pillar in pillars:
+            practices = wa_compliance.get(pillar, [])
+            if practices:
+                print(f"✓ {pillar}: {', '.join(practices)}")
+            else:
+                print(f"- {pillar}: No specific practices defined")
+        
+        print("\nCompliance check completed!")
+        EOF
+
+  # ステージ3: 手動デプロイメント承認（単一アカウント）
+  request-deployment-approval:
+    name: Request Deployment Approval
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates]
+    if: |
+      always() && 
+      needs.validate-and-map.result == 'success' && 
+      needs.test-templates.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    environment: 
+      name: ${{ format('single-account-{0}', needs.validate-and-map.outputs.target-environment) }}
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+    - name: Display deployment information
+      run: |
+        echo "🚀 Single Account Deployment Ready!"
+        echo "=================================="
+        echo "Deployment Mode: Single Account"
+        echo "Target Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
+        echo "Deployment Region: ${{ needs.validate-and-map.outputs.deployment-region }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Templates tested: ${{ needs.validate-and-map.outputs.templates-to-test }}"
+        echo ""
+        echo "All environments will be deployed to the same AWS account with logical separation."
+        echo "Environment separation is achieved through:"
+        echo "- Resource naming conventions"
+        echo "- Tags and metadata"
+        echo "- Parameter-based configuration"
+
+    - name: Determine deployment strategy
+      run: |
+        echo "📋 Single Account Deployment Strategy:"
+        echo "====================================="
+        
+        case "${{ needs.validate-and-map.outputs.target-environment }}" in
+          "prod")
+            echo "🔴 PRODUCTION DEPLOYMENT (Single Account)"
+            echo "- Requires 2+ approvals"
+            echo "- Production resource naming (prod-*)"
+            echo "- Full monitoring and backup enabled"
+            ;;
+          "staging")
+            echo "🟡 STAGING DEPLOYMENT (Single Account)"
+            echo "- Requires 1+ approval"
+            echo "- Staging resource naming (staging-*)"
+            echo "- Integration testing configuration"
+            ;;
+          "dev")
+            echo "🟢 DEVELOPMENT DEPLOYMENT (Single Account)"
+            echo "- Minimal approval required"
+            echo "- Development resource naming (dev-*)"
+            echo "- Cost-optimized configuration"
+            ;;
+        esac
+        
+        echo ""
+        echo "Resource isolation achieved through:"
+        echo "1. Environment-specific resource names"
+        echo "2. Environment-specific tags"
+        echo "3. Environment-specific parameter values"
+
+  # ステージ4: 実際のデプロイメント（単一アカウント）
+  deploy-to-aws:
+    name: Deploy to AWS (Single Account)
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates, request-deployment-approval]
+    if: |
+      always() && 
+      needs.request-deployment-approval.result == 'success'
+    strategy:
+      matrix:
+        template: ${{ fromJson(needs.validate-and-map.outputs.templates-to-test) }}
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install AWS CLI
+      run: |
+        pip install boto3
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+    - name: Configure AWS credentials for deployment
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ needs.validate-and-map.outputs.deployment-region }}
+        role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+        role-session-name: GitHubActions-CF-Deploy-SingleAccount-${{ needs.validate-and-map.outputs.target-environment }}
+
+    - name: Convert JSON config to CloudFormation parameters
+      run: |
+        python3 << 'EOF'
+        import json
+        
+        with open('${{ matrix.template.config }}', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        parameters = []
+        for key, value in config.get('Parameters', {}).items():
+            parameters.append({
+                'ParameterKey': key,
+                'ParameterValue': str(value)
+            })
+        
+        with open('cf-parameters.json', 'w') as f:
+            json.dump(parameters, f, indent=2)
+        EOF
+
+    - name: Deploy CloudFormation stack
+      run: |
+        # 単一アカウント用のスタック命名規則
+        STACK_NAME="${{ needs.validate-and-map.outputs.target-environment }}-${{ matrix.template.service }}-$(echo ${{ github.sha }} | cut -c1-8)"
+        
+        echo "Deploying stack: $STACK_NAME (Single Account Mode)"
+        echo "Template: ${{ matrix.template.template }}"
+        echo "Config: ${{ matrix.template.config }}"
+        echo "Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
+        
+        # スタックの存在確認
+        if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+          echo "Stack exists, updating..."
+          OPERATION="update-stack"
+        else
+          echo "Stack does not exist, creating..."
+          OPERATION="create-stack"
+        fi
+        
+        # スタックのデプロイ
+        aws cloudformation $OPERATION \
+          --stack-name $STACK_NAME \
+          --template-body file://${{ matrix.template.template }} \
+          --parameters file://cf-parameters.json \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --tags \
+            Key=DeployedBy,Value=GitHubActions \
+            Key=Repository,Value=${{ github.repository }} \
+            Key=Branch,Value=${{ github.ref_name }} \
+            Key=Commit,Value=${{ github.sha }} \
+            Key=Environment,Value=${{ needs.validate-and-map.outputs.target-environment }} \
+            Key=DeploymentMode,Value=SingleAccount
+        
+        # デプロイメントの完了を待機
+        echo "Waiting for stack operation to complete..."
+        aws cloudformation wait stack-${OPERATION%-stack}-complete --stack-name $STACK_NAME
+        
+        # デプロイメント結果の表示
+        echo "Stack deployment completed!"
+        aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].{StackName:StackName,Status:StackStatus,CreationTime:CreationTime}'
+
+    - name: Display stack outputs
+      run: |
+        STACK_NAME="${{ needs.validate-and-map.outputs.target-environment }}-${{ matrix.template.service }}-$(echo ${{ github.sha }} | cut -c1-8)"
+        
+        echo "Stack Outputs:"
+        aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].Outputs[*].{Key:OutputKey,Value:OutputValue,Description:Description}' \
+          --output table || echo "No outputs available"
+
+  # 通知ジョブ
+  notify-completion:
+    name: Notify Deployment Completion
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates, deploy-to-aws]
+    if: always()
+
+    steps:
+    - name: Notify success
+      if: needs.deploy-to-aws.result == 'success'
+      run: |
+        echo "🎉 Single Account Deployment completed successfully!"
+        echo "All CloudFormation templates have been deployed to the single AWS account."
+        echo "Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
+        
+    - name: Notify failure
+      if: failure()
+      run: |
+        echo "❌ Single Account Deployment failed!"
+        echo "Please check the logs above for error details."

@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Python Virtual Environment Check",
+  "description": "Checks if virtual environment is active before running Python commands and activates it if needed",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.py",
+      "requirements.txt",
+      "setup.py",
+      "pyproject.toml"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before executing any Python commands, please:\n1. Check if a virtual environment is currently active by running `which python` to verify the Python path\n2. If the system Python is being used (not from a virtual environment), activate the virtual environment first\n3. Confirm the virtual environment is properly activated before proceeding with Python operations\n4. Provide guidance in Japanese on virtual environment status and activation steps if needed"
+  }
+}

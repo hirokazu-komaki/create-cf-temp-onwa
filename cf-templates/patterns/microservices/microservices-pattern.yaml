@@ -1,0 +1,762 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠マイクロサービス統合パターン - API Gateway + Lambda + DynamoDB + SQS'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS05-BP01, OPS07-BP01]
+    Security: [SEC01-BP01, SEC02-BP01, SEC05-BP01, SEC08-BP01]
+    Reliability: [REL01-BP04, REL02-BP01, REL03-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST06-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  IntegrationPattern:
+    Name: Microservices
+    Description: "サーバーレスマイクロサービス構成"
+    Components: ["API Gateway", "Lambda", "DynamoDB", "SQS", "SNS"]
+    Dependencies: ["networking-vpc", "foundation-iam", "foundation-kms"]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+    Default: MyMicroservices
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ServicePattern:
+    Type: String
+    Description: マイクロサービスパターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+  
+  # Cross-Stack Import Parameters
+  ImportVPCId:
+    Type: String
+    Description: Import VPC ID from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+
+  ImportPrivateSubnets:
+    Type: String
+    Description: Import Private Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
+
+  ImportExecutionRoleArn:
+    Type: String
+    Description: Import Execution Role ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+
+  ImportApplicationKMSKeyArn:
+    Type: String
+    Description: Import Application KMS Key ARN from foundation-kms stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
+
+  ImportAlertTopicArn:
+    Type: String
+    Description: Import Alert Topic ARN from integration-cloudwatch stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-alert-topic-arn'
+
+  # Service-specific Parameters
+  LambdaRuntime:
+    Type: String
+    Description: Lambda Runtime
+    Default: python3.9
+    AllowedValues: [python3.9, python3.10, python3.11, nodejs18.x, nodejs20.x]
+  
+  LambdaMemorySize:
+    Type: Number
+    Description: Lambda Memory Size (MB)
+    Default: 256
+    MinValue: 128
+    MaxValue: 3008
+  
+  LambdaTimeout:
+    Type: Number
+    Description: Lambda Timeout (seconds)
+    Default: 30
+    MinValue: 1
+    MaxValue: 900
+  
+  DynamoDBBillingMode:
+    Type: String
+    Description: DynamoDB Billing Mode
+    Default: PAY_PER_REQUEST
+    AllowedValues: [PAY_PER_REQUEST, PROVISIONED]
+  
+  EnableXRayTracing:
+    Type: String
+    Description: X-Ray トレーシングを有効にする
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  IsAdvancedPattern: !Equals [!Ref ServicePattern, Advanced]
+  IsEnterprisePattern: !Equals [!Ref ServicePattern, Enterprise]
+  EnableXRayTracingCondition: !Equals [!Ref EnableXRayTracing, 'true']
+  IsProvisionedBilling: !Equals [!Ref DynamoDBBillingMode, PROVISIONED]
+
+Mappings:
+  ServiceSettings:
+    Basic:
+      ApiThrottleBurstLimit: 1000
+      ApiThrottleRateLimit: 500
+      DLQMaxReceiveCount: 3
+    Advanced:
+      ApiThrottleBurstLimit: 2000
+      ApiThrottleRateLimit: 1000
+      DLQMaxReceiveCount: 5
+    Enterprise:
+      ApiThrottleBurstLimit: 5000
+      ApiThrottleRateLimit: 2500
+      DLQMaxReceiveCount: 10
+
+Resources:
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - !If
+          - EnableXRayTracingCondition
+          - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+          - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt OrdersTable.Arn
+                  - !Sub '${UsersTable.Arn}/index/*'
+                  - !Sub '${OrdersTable.Arn}/index/*'
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt ProcessingQueue.Arn
+                  - !GetAtt DeadLetterQueue.Arn
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref NotificationTopic
+        - PolicyName: KMSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !Ref ImportApplicationKMSKeyArn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Lambda Security Group
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-lambda-sg'
+      GroupDescription: Security Group for Lambda functions
+      VpcId: !Ref ImportVPCId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # User Service Lambda Function
+  UserServiceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-user-service'
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          KMS_KEY_ID: !Ref ImportApplicationKMSKeyArn
+          ENVIRONMENT: !Ref Environment
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Split [',', !Ref ImportPrivateSubnets]
+      TracingConfig:
+        Mode: !If [EnableXRayTracingCondition, Active, PassThrough]
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table(os.environ['USERS_TABLE'])
+          
+          def handler(event, context):
+              try:
+                  http_method = event['httpMethod']
+                  path = event['path']
+                  
+                  if http_method == 'GET' and path == '/users':
+                      return get_users()
+                  elif http_method == 'POST' and path == '/users':
+                      return create_user(json.loads(event['body']))
+                  elif http_method == 'GET' and path.startswith('/users/'):
+                      user_id = path.split('/')[-1]
+                      return get_user(user_id)
+                  else:
+                      return {
+                          'statusCode': 404,
+                          'body': json.dumps({'error': 'Not found'})
+                      }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+          
+          def get_users():
+              response = table.scan()
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(response['Items'])
+              }
+          
+          def create_user(user_data):
+              user_data['created_at'] = datetime.utcnow().isoformat()
+              table.put_item(Item=user_data)
+              return {
+                  'statusCode': 201,
+                  'body': json.dumps(user_data)
+              }
+          
+          def get_user(user_id):
+              response = table.get_item(Key={'id': user_id})
+              if 'Item' in response:
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(response['Item'])
+                  }
+              else:
+                  return {
+                      'statusCode': 404,
+                      'body': json.dumps({'error': 'User not found'})
+                  }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-user-service'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Service
+          Value: UserService
+
+  # Order Service Lambda Function
+  OrderServiceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-order-service'
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+          PROCESSING_QUEUE: !Ref ProcessingQueue
+          NOTIFICATION_TOPIC: !Ref NotificationTopic
+          KMS_KEY_ID: !Ref ImportApplicationKMSKeyArn
+          ENVIRONMENT: !Ref Environment
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Split [',', !Ref ImportPrivateSubnets]
+      TracingConfig:
+        Mode: !If [EnableXRayTracingCondition, Active, PassThrough]
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          import uuid
+          
+          dynamodb = boto3.resource('dynamodb')
+          sqs = boto3.client('sqs')
+          sns = boto3.client('sns')
+          
+          orders_table = dynamodb.Table(os.environ['ORDERS_TABLE'])
+          
+          def handler(event, context):
+              try:
+                  http_method = event['httpMethod']
+                  path = event['path']
+                  
+                  if http_method == 'GET' and path == '/orders':
+                      return get_orders()
+                  elif http_method == 'POST' and path == '/orders':
+                      return create_order(json.loads(event['body']))
+                  elif http_method == 'GET' and path.startswith('/orders/'):
+                      order_id = path.split('/')[-1]
+                      return get_order(order_id)
+                  else:
+                      return {
+                          'statusCode': 404,
+                          'body': json.dumps({'error': 'Not found'})
+                      }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+          
+          def get_orders():
+              response = orders_table.scan()
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(response['Items'])
+              }
+          
+          def create_order(order_data):
+              order_data['id'] = str(uuid.uuid4())
+              order_data['status'] = 'pending'
+              order_data['created_at'] = datetime.utcnow().isoformat()
+              
+              # Save to DynamoDB
+              orders_table.put_item(Item=order_data)
+              
+              # Send to processing queue
+              sqs.send_message(
+                  QueueUrl=os.environ['PROCESSING_QUEUE'],
+                  MessageBody=json.dumps(order_data)
+              )
+              
+              # Send notification
+              sns.publish(
+                  TopicArn=os.environ['NOTIFICATION_TOPIC'],
+                  Message=f"New order created: {order_data['id']}",
+                  Subject="New Order Notification"
+              )
+              
+              return {
+                  'statusCode': 201,
+                  'body': json.dumps(order_data)
+              }
+          
+          def get_order(order_id):
+              response = orders_table.get_item(Key={'id': order_id})
+              if 'Item' in response:
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(response['Item'])
+                  }
+              else:
+                  return {
+                      'statusCode': 404,
+                      'body': json.dumps({'error': 'Order not found'})
+                  }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-order-service'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Service
+          Value: OrderService
+
+  # Order Processing Lambda Function
+  OrderProcessingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-order-processing'
+      Runtime: !Ref LambdaRuntime
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+          KMS_KEY_ID: !Ref ImportApplicationKMSKeyArn
+          ENVIRONMENT: !Ref Environment
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Split [',', !Ref ImportPrivateSubnets]
+      TracingConfig:
+        Mode: !If [EnableXRayTracingCondition, Active, PassThrough]
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from datetime import datetime
+          
+          dynamodb = boto3.resource('dynamodb')
+          orders_table = dynamodb.Table(os.environ['ORDERS_TABLE'])
+          
+          def handler(event, context):
+              try:
+                  for record in event['Records']:
+                      # Process SQS message
+                      order_data = json.loads(record['body'])
+                      process_order(order_data)
+                  
+                  return {'statusCode': 200}
+              except Exception as e:
+                  print(f"Error processing order: {str(e)}")
+                  raise
+          
+          def process_order(order_data):
+              # Simulate order processing
+              order_id = order_data['id']
+              
+              # Update order status
+              orders_table.update_item(
+                  Key={'id': order_id},
+                  UpdateExpression='SET #status = :status, processed_at = :processed_at',
+                  ExpressionAttributeNames={'#status': 'status'},
+                  ExpressionAttributeValues={
+                      ':status': 'processed',
+                      ':processed_at': datetime.utcnow().isoformat()
+                  }
+              )
+              
+              print(f"Order {order_id} processed successfully")
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-order-processing'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Service
+          Value: OrderProcessing
+
+  # API Gateway
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-api'
+      Description: Microservices API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-api'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # API Gateway Resources and Methods
+  UsersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: users
+
+  UserResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref UsersResource
+      PathPart: '{id}'
+
+  OrdersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: orders
+
+  OrderResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref OrdersResource
+      PathPart: '{id}'
+
+  # Lambda Permissions
+  UserServicePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UserServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${RestApi}/*/ANY/users*'
+
+  OrderServicePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OrderServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${RestApi}/*/ANY/orders*'
+
+  # DynamoDB Tables
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-users'
+      BillingMode: !Ref DynamoDBBillingMode
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+        KMSMasterKeyId: !Ref ImportApplicationKMSKeyArn
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-users'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-orders'
+      BillingMode: !Ref DynamoDBBillingMode
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserOrdersIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+        KMSMasterKeyId: !Ref ImportApplicationKMSKeyArn
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-orders'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # SQS Queues
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-${Environment}-dlq'
+      KmsMasterKeyId: !Ref ImportApplicationKMSKeyArn
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-dlq'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-${Environment}-processing-queue'
+      KmsMasterKeyId: !Ref ImportApplicationKMSKeyArn
+      VisibilityTimeoutSeconds: !Ref LambdaTimeout
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !FindInMap [ServiceSettings, !Ref ServicePattern, DLQMaxReceiveCount]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-processing-queue'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # SQS Event Source Mapping
+  OrderProcessingEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt ProcessingQueue.Arn
+      FunctionName: !Ref OrderProcessingFunction
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  # SNS Topic
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-notifications'
+      KmsMasterKeyId: !Ref ImportApplicationKMSKeyArn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-notifications'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - UsersResource
+      - OrdersResource
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: !Ref Environment
+
+  # CloudWatch Alarms
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-errors'
+      AlarmDescription: Lambda function errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-dynamodb-throttles'
+      AlarmDescription: DynamoDB throttling events
+      MetricName: ThrottledRequests
+      Namespace: AWS/DynamoDB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+
+Outputs:
+  RestApiId:
+    Description: REST API ID
+    Value: !Ref RestApi
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-RestApi-Id'
+
+  RestApiEndpoint:
+    Description: REST API Endpoint URL
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-RestApi-Endpoint'
+
+  UsersTableName:
+    Description: Users DynamoDB Table Name
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-UsersTable'
+
+  OrdersTableName:
+    Description: Orders DynamoDB Table Name
+    Value: !Ref OrdersTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-OrdersTable'
+
+  ProcessingQueueUrl:
+    Description: Processing Queue URL
+    Value: !Ref ProcessingQueue
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-ProcessingQueue-URL'
+
+  NotificationTopicArn:
+    Description: Notification Topic ARN
+    Value: !Ref NotificationTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-NotificationTopic-Arn'
+
+  UserServiceFunctionArn:
+    Description: User Service Lambda Function ARN
+    Value: !GetAtt UserServiceFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-UserService-Arn'
+
+  OrderServiceFunctionArn:
+    Description: Order Service Lambda Function ARN
+    Value: !GetAtt OrderServiceFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Microservices-OrderService-Arn'

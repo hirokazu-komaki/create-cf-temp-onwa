@@ -1,0 +1,524 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠 API Gateway テンプレート - REST API と HTTP API をサポート'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS07-BP01]
+    Security: [SEC01-BP01, SEC02-BP02, SEC03-BP01, SEC03-BP07]
+    Reliability: [REL01-BP04, REL02-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST07-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なAPI Gateway設定"
+      Features: ["REST API", "基本認証", "CloudWatchログ"]
+    Advanced:
+      Description: "高度なAPI Gateway設定"
+      Features: ["REST API", "HTTP API", "Cognito認証", "レート制限", "キャッシング"]
+    Enterprise:
+      Description: "エンタープライズAPI Gateway設定"
+      Features: ["REST API", "HTTP API", "Lambda Authorizer", "WAF統合", "X-Ray トレーシング"]
+
+Parameters:
+
+  # Cross-Stack Import Parameters
+  ImportLambdaFunctionArn:
+    Type: String
+    Description: Import Lambda Function ARN from compute-lambda stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-Lambda-Function-Arn'
+
+  ImportExecutionRoleArn:
+    Type: String
+    Description: Import Execution Role ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+
+  ImportApplicationLogGroupName:
+    Type: String
+    Description: Import Application Log Group Name from integration-cloudwatch stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-application-log-group'
+
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+    Default: my-project
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ApiType:
+    Type: String
+    Description: API Gateway のタイプ
+    Default: REST
+    AllowedValues: [REST, HTTP, BOTH]
+  
+  ConfigurationPattern:
+    Type: String
+    Description: 設定パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+  
+  AuthenticationType:
+    Type: String
+    Description: 認証タイプ
+    Default: NONE
+    AllowedValues: [NONE, AWS_IAM, COGNITO_USER_POOLS, LAMBDA_AUTHORIZER]
+  
+  CognitoUserPoolId:
+    Type: String
+    Description: Cognito User Pool ID (COGNITO_USER_POOLS選択時)
+    Default: ""
+  
+  LambdaAuthorizerFunctionArn:
+    Type: String
+    Description: Lambda Authorizer Function ARN (LAMBDA_AUTHORIZER選択時)
+    Default: ""
+  
+  EnableCaching:
+    Type: String
+    Description: キャッシングを有効にする
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  
+  CachingTtlInSeconds:
+    Type: Number
+    Description: キャッシュTTL（秒）
+    Default: 300
+    MinValue: 0
+    MaxValue: 3600
+  
+  ThrottleBurstLimit:
+    Type: Number
+    Description: スロットリング バーストリミット
+    Default: 2000
+    MinValue: 0
+    MaxValue: 5000
+  
+  ThrottleRateLimit:
+    Type: Number
+    Description: スロットリング レートリミット
+    Default: 1000
+    MinValue: 0
+    MaxValue: 10000
+  
+  EnableXRayTracing:
+    Type: String
+    Description: X-Ray トレーシングを有効にする
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  
+  LogLevel:
+    Type: String
+    Description: CloudWatch ログレベル
+    Default: INFO
+    AllowedValues: [OFF, ERROR, INFO]
+
+Mappings:
+  ConfigurationSettings:
+    Basic:
+      CacheClusterSize: "0.5"
+      LogRetentionDays: 7
+      MetricsEnabled: "false"
+    Advanced:
+      CacheClusterSize: "1.6"
+      LogRetentionDays: 14
+      MetricsEnabled: "true"
+    Enterprise:
+      CacheClusterSize: "6.1"
+      LogRetentionDays: 30
+      MetricsEnabled: "true"
+
+Conditions:
+  CreateRestApi: !Or
+    - !Equals [!Ref ApiType, REST]
+    - !Equals [!Ref ApiType, BOTH]
+  
+  CreateHttpApi: !Or
+    - !Equals [!Ref ApiType, HTTP]
+    - !Equals [!Ref ApiType, BOTH]
+  
+  EnableCachingCondition: !Equals [!Ref EnableCaching, "true"]
+  
+  UseCognitoAuth: !Equals [!Ref AuthenticationType, COGNITO_USER_POOLS]
+  
+  UseLambdaAuth: !Equals [!Ref AuthenticationType, LAMBDA_AUTHORIZER]
+  
+  EnableXRayCondition: !Equals [!Ref EnableXRayTracing, "true"]
+  
+  IsAdvancedOrEnterprise: !Or
+    - !Equals [!Ref ConfigurationPattern, Advanced]
+    - !Equals [!Ref ConfigurationPattern, Enterprise]
+
+Resources:
+  # CloudWatch Log Group for API Gateway
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${ProjectName}-${Environment}'
+      RetentionInDays: !FindInMap [ConfigurationSettings, !Ref ConfigurationPattern, LogRetentionDays]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-api-gateway-logs'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # IAM Role for API Gateway CloudWatch Logs
+  ApiGatewayCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-api-gateway-cloudwatch-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-api-gateway-cloudwatch-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # API Gateway Account Configuration
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchRole.Arn
+
+  # REST API
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Condition: CreateRestApi
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-rest-api'
+      Description: !Sub 'REST API for ${ProjectName} ${Environment}'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-rest-api'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # REST API Deployment
+  RestApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Condition: CreateRestApi
+    DependsOn: RestApiMethod
+    Properties:
+      RestApiId: !Ref RestApi
+      Description: !Sub 'Deployment for ${ProjectName} ${Environment} REST API'
+
+  # REST API Stage
+  RestApiStage:
+    Type: AWS::ApiGateway::Stage
+    Condition: CreateRestApi
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref RestApiDeployment
+      StageName: !Ref Environment
+      Description: !Sub '${Environment} stage for ${ProjectName} REST API'
+      CacheClusterEnabled: !If [EnableCachingCondition, true, false]
+      CacheClusterSize: !If 
+        - EnableCachingCondition
+        - !FindInMap [ConfigurationSettings, !Ref ConfigurationPattern, CacheClusterSize]
+        - !Ref AWS::NoValue
+      CacheTtlInSeconds: !If [EnableCachingCondition, !Ref CachingTtlInSeconds, !Ref AWS::NoValue]
+      CachingEnabled: !If [EnableCachingCondition, true, false]
+      ThrottleSettings:
+        BurstLimit: !Ref ThrottleBurstLimit
+        RateLimit: !Ref ThrottleRateLimit
+      TracingConfig:
+        TracingEnabled: !If [EnableXRayCondition, true, false]
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: >
+          {
+            "requestId": "$context.requestId",
+            "ip": "$context.identity.sourceIp",
+            "caller": "$context.identity.caller",
+            "user": "$context.identity.user",
+            "requestTime": "$context.requestTime",
+            "httpMethod": "$context.httpMethod",
+            "resourcePath": "$context.resourcePath",
+            "status": "$context.status",
+            "protocol": "$context.protocol",
+            "responseLength": "$context.responseLength"
+          }
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          LoggingLevel: !Ref LogLevel
+          DataTraceEnabled: true
+          MetricsEnabled: !FindInMap [ConfigurationSettings, !Ref ConfigurationPattern, MetricsEnabled]
+          ThrottlingBurstLimit: !Ref ThrottleBurstLimit
+          ThrottlingRateLimit: !Ref ThrottleRateLimit
+          CachingEnabled: !If [EnableCachingCondition, true, false]
+          CacheTtlInSeconds: !If [EnableCachingCondition, !Ref CachingTtlInSeconds, !Ref AWS::NoValue]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-rest-api-stage'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # REST API Resource
+  RestApiResource:
+    Type: AWS::ApiGateway::Resource
+    Condition: CreateRestApi
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: 'health'
+
+  # REST API Method
+  RestApiMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: CreateRestApi
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref RestApiResource
+      HttpMethod: GET
+      AuthorizationType: !Ref AuthenticationType
+      AuthorizerId: !If
+        - UseCognitoAuth
+        - !Ref CognitoAuthorizer
+        - !If
+          - UseLambdaAuth
+          - !Ref LambdaAuthorizer
+          - !Ref AWS::NoValue
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: '{"status": "healthy", "timestamp": "$context.requestTime"}'
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # Cognito Authorizer (if using Cognito authentication)
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Condition: UseCognitoAuth
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-cognito-authorizer'
+      RestApiId: !Ref RestApi
+      Type: COGNITO_USER_POOLS
+      ProviderARNs:
+        - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+      IdentitySource: method.request.header.Authorization
+
+  # Lambda Authorizer (if using Lambda authentication)
+  LambdaAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Condition: UseLambdaAuth
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-lambda-authorizer'
+      RestApiId: !Ref RestApi
+      Type: TOKEN
+      AuthorizerUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaAuthorizerFunctionArn}/invocations'
+      AuthorizerCredentials: !GetAtt LambdaAuthorizerRole.Arn
+      IdentitySource: method.request.header.Authorization
+      AuthorizerResultTtlInSeconds: 300
+
+  # IAM Role for Lambda Authorizer
+  LambdaAuthorizerRole:
+    Type: AWS::IAM::Role
+    Condition: UseLambdaAuth
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-lambda-authorizer-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Ref LambdaAuthorizerFunctionArn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-authorizer-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # HTTP API
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Condition: CreateHttpApi
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-http-api'
+      Description: !Sub 'HTTP API for ${ProjectName} ${Environment}'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowCredentials: false
+        AllowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowOrigins:
+          - '*'
+        MaxAge: 86400
+      Tags:
+        Name: !Sub '${ProjectName}-${Environment}-http-api'
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+
+  # HTTP API Stage
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Condition: CreateHttpApi
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: !Ref Environment
+      Description: !Sub '${Environment} stage for ${ProjectName} HTTP API'
+      ThrottleSettings:
+        BurstLimit: !Ref ThrottleBurstLimit
+        RateLimit: !Ref ThrottleRateLimit
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: >
+          {
+            "requestId": "$context.requestId",
+            "ip": "$context.identity.sourceIp",
+            "requestTime": "$context.requestTime",
+            "httpMethod": "$context.httpMethod",
+            "routeKey": "$context.routeKey",
+            "status": "$context.status",
+            "protocol": "$context.protocol",
+            "responseLength": "$context.responseLength"
+          }
+      Tags:
+        Name: !Sub '${ProjectName}-${Environment}-http-api-stage'
+        Environment: !Ref Environment
+        Project: !Ref ProjectName
+
+  # HTTP API Route
+  HttpApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Condition: CreateHttpApi
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /health'
+      Target: !Sub 'integrations/${HttpApiIntegration}'
+
+  # HTTP API Integration
+  HttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Condition: CreateHttpApi
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: MOCK
+      PayloadFormatVersion: '1.0'
+      RequestTemplates:
+        application/json: '{"statusCode": 200}'
+      TemplateSelectionExpression: '200'
+      IntegrationResponseSelectionExpression: '200'
+
+  # HTTP API Integration Response
+  HttpApiIntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Condition: CreateHttpApi
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationId: !Ref HttpApiIntegration
+      IntegrationResponseKey: '200'
+      ResponseTemplates:
+        application/json: '{"status": "healthy", "timestamp": "$context.requestTime"}'
+
+  # HTTP API Route Response
+  HttpApiRouteResponse:
+    Type: AWS::ApiGatewayV2::RouteResponse
+    Condition: CreateHttpApi
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteId: !Ref HttpApiRoute
+      RouteResponseKey: '200'
+
+Outputs:
+  RestApiId:
+    Description: REST API ID
+    Value: !If [CreateRestApi, !Ref RestApi, "N/A"]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-rest-api-id'
+  
+  RestApiUrl:
+    Description: REST API URL
+    Value: !If 
+      - CreateRestApi
+      - !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+      - "N/A"
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-rest-api-url'
+  
+  HttpApiId:
+    Description: HTTP API ID
+    Value: !If [CreateHttpApi, !Ref HttpApi, "N/A"]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-http-api-id'
+  
+  HttpApiUrl:
+    Description: HTTP API URL
+    Value: !If 
+      - CreateHttpApi
+      - !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+      - "N/A"
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-http-api-url'
+  
+  ApiGatewayLogGroupName:
+    Description: API Gateway CloudWatch Log Group Name
+    Value: !Ref ApiGatewayLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-api-gateway-log-group'
+  
+  ApiGatewayCloudWatchRoleArn:
+    Description: API Gateway CloudWatch Role ARN
+    Value: !GetAtt ApiGatewayCloudWatchRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-api-gateway-cloudwatch-role-arn'

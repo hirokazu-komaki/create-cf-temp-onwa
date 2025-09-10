@@ -1,0 +1,562 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠IAMロールとポリシーテンプレート - 最小権限の原則に基づく設定可能なパターン'
+
+Metadata:
+  WellArchitectedCompliance:
+    Security: 
+      - SEC02-BP01  # 最小権限の原則を使用する
+      - SEC02-BP02  # 一時的な認証情報を使用する
+      - SEC02-BP03  # 強力なアイデンティティ基盤を確立する
+      - SEC03-BP01  # プログラムによるアクセスを制御する
+      - SEC03-BP02  # ルートユーザーとプロパティを管理する
+    OperationalExcellence:
+      - OPS04-BP01  # 設定管理システムを実装する
+      - OPS04-BP02  # 設定ドリフトを管理する
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なIAM設定 - 単一アカウント、標準権限"
+      UseCases: ["開発環境", "小規模プロジェクト"]
+    Advanced:
+      Description: "高度なIAM設定 - マルチアカウント、詳細権限制御"
+      UseCases: ["本番環境", "中規模プロジェクト"]
+    Enterprise:
+      Description: "エンタープライズIAM設定 - 組織全体、包括的ガバナンス"
+      UseCases: ["大規模組織", "コンプライアンス要件"]
+
+Parameters:
+  PermissionPattern:
+    Type: String
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+    Description: IAM権限パターンの選択
+  
+  ProjectName:
+    Type: String
+    Default: MyProject
+    Description: プロジェクト名（リソース命名に使用）
+    
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: 環境名
+    
+  EnableCrossAccountAccess:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: クロスアカウントアクセスを有効にするか
+    
+  TrustedAccountIds:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: 信頼するAWSアカウントIDのリスト（クロスアカウントアクセス用）
+    
+  EnableMFARequirement:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: MFA要件を有効にするか
+    
+  SessionDurationHours:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 12
+    Description: セッション継続時間（時間）
+
+Conditions:
+  IsCrossAccountEnabled: !Equals [!Ref EnableCrossAccountAccess, 'true']
+  IsMFARequired: !Equals [!Ref EnableMFARequirement, 'true']
+  IsBasicPattern: !Equals [!Ref PermissionPattern, 'Basic']
+  IsAdvancedPattern: !Equals [!Ref PermissionPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref PermissionPattern, 'Enterprise']
+  HasTrustedAccounts: !Not [!Equals [!Join ['', !Ref TrustedAccountIds], '']]
+
+Mappings:
+  PermissionPatterns:
+    Basic:
+      MaxSessionDuration: 3600
+      RequireMFA: 'false'
+      AllowedServices: 'ec2,s3,cloudwatch'
+      PolicyComplexity: 'simple'
+    Advanced:
+      MaxSessionDuration: 7200
+      RequireMFA: 'true'
+      AllowedServices: 'ec2,s3,rds,lambda,cloudwatch,iam'
+      PolicyComplexity: 'moderate'
+    Enterprise:
+      MaxSessionDuration: 14400
+      RequireMFA: 'true'
+      AllowedServices: '*'
+      PolicyComplexity: 'comprehensive'
+
+Resources:
+  # 基本実行ロール
+  BasicExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: IsBasicPattern
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-basic-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - !If
+            - IsCrossAccountEnabled
+            - Effect: Allow
+              Principal:
+                AWS: !Split
+                  - ','
+                  - !Sub
+                    - 'arn:aws:iam::${inner}:root'
+                    - inner: !Join
+                      - ':root,arn:aws:iam::'
+                      - !Ref TrustedAccountIds
+              Action: sts:AssumeRole
+              Condition: !If
+                - IsMFARequired
+                - Bool:
+                    'aws:MultiFactorAuthPresent': 'true'
+                - !Ref AWS::NoValue
+            - !Ref AWS::NoValue
+      MaxSessionDuration: !FindInMap [PermissionPatterns, !Ref PermissionPattern, MaxSessionDuration]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-basic-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: WellArchitected
+          Value: 'SEC02-BP01'
+
+  # 高度実行ロール
+  AdvancedExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: IsAdvancedPattern
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-advanced-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+                - lambda.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+          - !If
+            - IsCrossAccountEnabled
+            - Effect: Allow
+              Principal:
+                AWS: !Split
+                  - ','
+                  - !Sub
+                    - 'arn:aws:iam::${inner}:root'
+                    - inner: !Join
+                      - ':root,arn:aws:iam::'
+                      - !Ref TrustedAccountIds
+              Action: sts:AssumeRole
+              Condition:
+                Bool:
+                  'aws:MultiFactorAuthPresent': 'true'
+                NumericLessThan:
+                  'aws:TokenIssueTime': !Ref SessionDurationHours
+            - !Ref AWS::NoValue
+      MaxSessionDuration: !FindInMap [PermissionPatterns, !Ref PermissionPattern, MaxSessionDuration]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-advanced-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: WellArchitected
+          Value: 'SEC02-BP01,SEC02-BP02'
+
+  # エンタープライズ実行ロール
+  EnterpriseExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: IsEnterprisePattern
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-enterprise-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+                - lambda.amazonaws.com
+                - ecs-tasks.amazonaws.com
+                - codebuild.amazonaws.com
+            Action: sts:AssumeRole
+          - !If
+            - IsCrossAccountEnabled
+            - Effect: Allow
+              Principal:
+                AWS: !Split
+                  - ','
+                  - !Sub
+                    - 'arn:aws:iam::${inner}:root'
+                    - inner: !Join
+                      - ':root,arn:aws:iam::'
+                      - !Ref TrustedAccountIds
+              Action: sts:AssumeRole
+              Condition:
+                Bool:
+                  'aws:MultiFactorAuthPresent': 'true'
+                StringEquals:
+                  'aws:RequestedRegion': !Ref AWS::Region
+                DateGreaterThan:
+                  'aws:CurrentTime': '2024-01-01T00:00:00Z'
+            - !Ref AWS::NoValue
+      MaxSessionDuration: !FindInMap [PermissionPatterns, !Ref PermissionPattern, MaxSessionDuration]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-enterprise-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: WellArchitected
+          Value: 'SEC02-BP01,SEC02-BP02,SEC03-BP01'
+  # 基本実行ポリシー
+  BasicExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Condition: IsBasicPattern
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Environment}-basic-execution-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: BasicEC2Access
+            Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeImages
+              - ec2:DescribeSnapshots
+              - ec2:DescribeVolumes
+            Resource: '*'
+          - Sid: BasicS3Access
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-*/*'
+          - Sid: BasicCloudWatchAccess
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: '*'
+      Roles:
+        - !Ref BasicExecutionRole
+
+  # 高度実行ポリシー
+  AdvancedExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Condition: IsAdvancedPattern
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Environment}-advanced-execution-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AdvancedEC2Access
+            Effect: Allow
+            Action:
+              - ec2:*
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'ec2:Region': !Ref AWS::Region
+          - Sid: AdvancedS3Access
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-*'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-*/*'
+          - Sid: AdvancedRDSAccess
+            Effect: Allow
+            Action:
+              - rds:Describe*
+              - rds:CreateDBSnapshot
+              - rds:DeleteDBSnapshot
+            Resource: '*'
+          - Sid: AdvancedLambdaAccess
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+              - lambda:GetFunction
+              - lambda:ListFunctions
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*'
+          - Sid: AdvancedIAMAccess
+            Effect: Allow
+            Action:
+              - iam:GetRole
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+          - Sid: AdvancedCloudWatchAccess
+            Effect: Allow
+            Action:
+              - cloudwatch:*
+              - logs:*
+            Resource: '*'
+      Roles:
+        - !Ref AdvancedExecutionRole
+
+  # エンタープライズ実行ポリシー
+  EnterpriseExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Condition: IsEnterprisePattern
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Environment}-enterprise-execution-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnterpriseFullAccess
+            Effect: Allow
+            Action: '*'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': 
+                  - !Ref AWS::Region
+                  - 'us-east-1'  # Global services
+              Bool:
+                'aws:ViaAWSService': 'false'
+          - Sid: EnterpriseDenyDangerousActions
+            Effect: Deny
+            Action:
+              - iam:DeleteRole
+              - iam:DeleteUser
+              - iam:DeleteGroup
+              - organizations:LeaveOrganization
+              - account:CloseAccount
+            Resource: '*'
+          - Sid: EnterpriseRequireMFAForSensitive
+            Effect: Deny
+            Action:
+              - iam:CreateUser
+              - iam:CreateRole
+              - iam:AttachUserPolicy
+              - iam:AttachRolePolicy
+            Resource: '*'
+            Condition:
+              Bool:
+                'aws:MultiFactorAuthPresent': 'false'
+      Roles:
+        - !Ref EnterpriseExecutionRole
+
+  # インスタンスプロファイル（EC2用）
+  BasicInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: IsBasicPattern
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-basic-instance-profile'
+      Roles:
+        - !Ref BasicExecutionRole
+
+  AdvancedInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: IsAdvancedPattern
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-advanced-instance-profile'
+      Roles:
+        - !Ref AdvancedExecutionRole
+
+  EnterpriseInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: IsEnterprisePattern
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-enterprise-instance-profile'
+      Roles:
+        - !Ref EnterpriseExecutionRole
+
+  # クロスアカウントアクセス用ロール
+  CrossAccountAccessRole:
+    Type: AWS::IAM::Role
+    Condition: IsCrossAccountEnabled
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-cross-account-access-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !If
+                - HasTrustedAccounts
+                - !Split
+                  - ','
+                  - !Sub
+                    - 'arn:aws:iam::${inner}:root'
+                    - inner: !Join
+                      - ':root,arn:aws:iam::'
+                      - !Ref TrustedAccountIds
+                - !Ref AWS::NoValue
+            Action: sts:AssumeRole
+            Condition: !If
+              - IsMFARequired
+              - Bool:
+                  'aws:MultiFactorAuthPresent': 'true'
+              - !Ref AWS::NoValue
+      MaxSessionDuration: 3600
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-cross-account-access-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: 'CrossAccountAccess'
+
+  # 監査ロール（読み取り専用）
+  AuditRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-audit-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - !If
+            - IsCrossAccountEnabled
+            - Effect: Allow
+              Principal:
+                AWS: !Split
+                  - ','
+                  - !Sub
+                    - 'arn:aws:iam::${inner}:root'
+                    - inner: !Join
+                      - ':root,arn:aws:iam::'
+                      - !Ref TrustedAccountIds
+              Action: sts:AssumeRole
+              Condition:
+                Bool:
+                  'aws:MultiFactorAuthPresent': 'true'
+            - !Ref AWS::NoValue
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - arn:aws:iam::aws:policy/SecurityAudit
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-audit-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: 'SecurityAudit'
+
+Outputs:
+  BasicExecutionRoleArn:
+    Condition: IsBasicPattern
+    Description: 'Basic実行ロールのARN'
+    Value: !GetAtt BasicExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-basic-execution-role-arn'
+
+  AdvancedExecutionRoleArn:
+    Condition: IsAdvancedPattern
+    Description: 'Advanced実行ロールのARN'
+    Value: !GetAtt AdvancedExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-advanced-execution-role-arn'
+
+  EnterpriseExecutionRoleArn:
+    Condition: IsEnterprisePattern
+    Description: 'Enterprise実行ロールのARN'
+    Value: !GetAtt EnterpriseExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-enterprise-execution-role-arn'
+
+  BasicInstanceProfileArn:
+    Condition: IsBasicPattern
+    Description: 'BasicインスタンスプロファイルのARN'
+    Value: !GetAtt BasicInstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-basic-instance-profile-arn'
+
+  AdvancedInstanceProfileArn:
+    Condition: IsAdvancedPattern
+    Description: 'AdvancedインスタンスプロファイルのARN'
+    Value: !GetAtt AdvancedInstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-advanced-instance-profile-arn'
+
+  EnterpriseInstanceProfileArn:
+    Condition: IsEnterprisePattern
+    Description: 'EnterpriseインスタンスプロファイルのARN'
+    Value: !GetAtt EnterpriseInstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-enterprise-instance-profile-arn'
+
+  CrossAccountAccessRoleArn:
+    Condition: IsCrossAccountEnabled
+    Description: 'クロスアカウントアクセスロールのARN'
+    Value: !GetAtt CrossAccountAccessRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cross-account-access-role-arn'
+
+  AuditRoleArn:
+    Description: '監査ロールのARN'
+    Value: !GetAtt AuditRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-audit-role-arn'
+
+  PermissionPattern:
+    Description: '使用された権限パターン'
+    Value: !Ref PermissionPattern
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-permission-pattern'
+  # Cross-Stack Integration Outputs
+  ExecutionRoleArn:
+    Description: 現在のパターンに対応する実行ロールARN
+    Value: !If
+      - IsBasicPattern
+      - !GetAtt BasicExecutionRole.Arn
+      - !If
+        - IsAdvancedPattern
+        - !GetAtt AdvancedExecutionRole.Arn
+        - !GetAtt EnterpriseExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-execution-role-arn'
+
+  InstanceProfileArn:
+    Description: 現在のパターンに対応するインスタンスプロファイルARN
+    Value: !If
+      - IsBasicPattern
+      - !GetAtt BasicInstanceProfile.Arn
+      - !If
+        - IsAdvancedPattern
+        - !GetAtt AdvancedInstanceProfile.Arn
+        - !GetAtt EnterpriseInstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-instance-profile-arn'
+
+  CrossAccountAccessRoleArn:
+    Condition: IsCrossAccountEnabled
+    Description: クロスアカウントアクセスロールのARN
+    Value: !GetAtt CrossAccountAccessRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cross-account-access-role-arn'

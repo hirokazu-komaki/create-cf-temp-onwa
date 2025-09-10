@@ -1,0 +1,74 @@
+{
+  "name": "vpc-basic",
+  "version": "1.0.0",
+  "description": "Basic VPC template with Well-Architected compliance",
+  "category": "networking",
+  "service": "VPC",
+  "dependencies": [
+    {
+      "name": "iam-basic",
+      "type": "template",
+      "required": false
+    }
+  ],
+  "wellArchitectedCompliance": {
+    "operationalExcellence": [
+      "OPS04-BP01",
+      "OPS04-BP02"
+    ],
+    "security": [
+      "SEC01-BP01",
+      "SEC02-BP01"
+    ],
+    "reliability": [
+      "REL01-BP04",
+      "REL02-BP01",
+      "REL02-BP03"
+    ],
+    "performanceEfficiency": [
+      "PERF02-BP05"
+    ],
+    "costOptimization": [
+      "COST02-BP05"
+    ],
+    "sustainability": [
+      "SUS01-BP01",
+      "SUS02-BP01"
+    ]
+  },
+  "configurationPatterns": {
+    "basic": {
+      "description": "Basic VPC with public and private subnets",
+      "parameters": {
+        "cidrBlock": "10.0.0.0/16",
+        "availabilityZones": 2,
+        "enableNatGateway": true
+      },
+      "wellArchitectedFocus": ["reliability", "costOptimization"]
+    },
+    "advanced": {
+      "description": "Advanced VPC with multiple tiers and enhanced security",
+      "parameters": {
+        "cidrBlock": "10.0.0.0/16",
+        "availabilityZones": 3,
+        "enableNatGateway": true,
+        "enableVpcFlowLogs": true,
+        "enableDnsHostnames": true
+      },
+      "wellArchitectedFocus": ["security", "reliability", "operationalExcellence"]
+    },
+    "enterprise": {
+      "description": "Enterprise VPC with full compliance and monitoring",
+      "parameters": {
+        "cidrBlock": "10.0.0.0/16",
+        "availabilityZones": 3,
+        "enableNatGateway": true,
+        "enableVpcFlowLogs": true,
+        "enableDnsHostnames": true,
+        "enableTransitGateway": true,
+        "enableNetworkAcls": true
+      },
+      "wellArchitectedFocus": ["security", "reliability", "operationalExcellence", "performanceEfficiency"]
+    }
+  }
+}

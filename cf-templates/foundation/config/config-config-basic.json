@@ -1,0 +1,19 @@
+{
+  "Parameters": {
+    "ConfigPattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "EnableConfigRecorder": "true",
+    "EnableDeliveryChannel": "true",
+    "S3BucketName": "myapp-config-bucket-dev",
+    "IncludeGlobalResourceTypes": "false",
+    "EnableAllSupportedResourceTypes": "true"
+  },
+  "Tags": {
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "OperationalExcellence"
+  },
+  "Description": "開発環境用の基本的なAWS Config設定 - リソース設定の記録"
+}

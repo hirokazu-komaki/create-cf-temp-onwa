@@ -1,0 +1,16 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "staging",
+  "LoadBalancerType": "application",
+  "ConfigurationPattern": "Advanced",
+  "VPCId": "vpc-12345678",
+  "SubnetIds": "subnet-12345678,subnet-87654321,subnet-11223344",
+  "Scheme": "internet-facing",
+  "EnableAccessLogs": "true",
+  "AccessLogsBucket": "my-webapp-staging-access-logs",
+  "SSLCertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+  "HealthCheckPath": "/health",
+  "HealthCheckPort": 80,
+  "TargetPort": 80,
+  "EnableWAF": "true"
+}

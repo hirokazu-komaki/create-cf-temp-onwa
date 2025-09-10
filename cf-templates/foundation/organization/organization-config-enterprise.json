@@ -1,0 +1,28 @@
+{
+  "Parameters": {
+    "OrganizationPattern": "Enterprise",
+    "MasterAccountName": "Enterprise-Master",
+    "EnableAllFeatures": "true",
+    "EnableSCP": "true",
+    "CreateOUs": "true",
+    "OUNames": ["Production", "Staging", "Development", "Security", "Shared-Services", "Sandbox", "Workloads"],
+    "EnableCloudTrail": "true",
+    "EnableConfig": "true",
+    "EnableGuardDuty": "true",
+    "EnableSecurityHub": "true",
+    "EnableControlTower": "true",
+    "EnableSSO": "true",
+    "EnableCostAndUsageReports": "true",
+    "EnableTrustedAdvisor": "true",
+    "ConsolidatedBilling": "true"
+  },
+  "Tags": {
+    "Owner": "Cloud Center of Excellence",
+    "CostCenter": "Infrastructure",
+    "Environment": "Enterprise-Multi-Account",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "GovernanceLevel": "Enterprise"
+  },
+  "Description": "エンタープライズAWS Organizations設定 - 完全なガバナンス、コンプライアンス、セキュリティ統合"
+}

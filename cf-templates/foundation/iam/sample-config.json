@@ -1,0 +1,18 @@
+{
+  "Parameters": {
+    "PermissionPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "prod",
+    "EnableCrossAccountAccess": "true",
+    "TrustedAccountIds": ["123456789012", "987654321098"],
+    "EnableMFARequirement": "true",
+    "SessionDurationHours": 2
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Compliance": "SOC2",
+    "WellArchitected": "Security"
+  },
+  "Description": "本番環境用の高度なIAM設定 - MFA必須、クロスアカウントアクセス有効"
+}

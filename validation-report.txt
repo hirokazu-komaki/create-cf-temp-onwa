@@ -1,0 +1,72 @@
+================================================================================
+Cross-Stack Dependencies Validation Report
+================================================================================
+
+Total Stacks: 11
+Valid Stacks: 4
+Invalid Stacks: 7
+
+Stack: integration-cloudwatch
+Status: ✓ VALID
+
+Stack: networking-elb
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'compute-ec2' が存在しません
+
+Stack: patterns-web-application
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+    - 依存スタック 'compute-ec2' が存在しません
+    - 依存スタック 'networking-elb' が存在しません
+    - 依存スタック 'integration-cloudwatch' が存在しません
+
+Stack: patterns-microservices
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+    - 依存スタック 'compute-lambda' が存在しません
+    - 依存スタック 'integration-api-gateway' が存在しません
+    - 依存スタック 'integration-cloudwatch' が存在しません
+
+Stack: networking-vpc
+Status: ✓ VALID
+
+Stack: compute-ec2
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+
+Stack: foundation-iam
+Status: ✓ VALID
+
+Stack: patterns-data-processing
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+    - 依存スタック 'compute-lambda' が存在しません
+    - 依存スタック 'foundation-kms' が存在しません
+    - 依存スタック 'integration-cloudwatch' が存在しません
+
+Stack: integration-api-gateway
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'compute-lambda' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+    - 依存スタック 'integration-cloudwatch' が存在しません
+
+Stack: foundation-kms
+Status: ✓ VALID
+
+Stack: compute-lambda
+Status: ✗ INVALID
+  Errors:
+    - 依存スタック 'networking-vpc' が存在しません
+    - 依存スタック 'foundation-iam' が存在しません
+    - 依存スタック 'foundation-kms' が存在しません

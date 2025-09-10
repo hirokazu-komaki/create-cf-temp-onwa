@@ -1,0 +1,19 @@
+{
+  "Parameters": {
+    "ProjectName": "my-web-app",
+    "Environment": "prod",
+    "ConfigurationPattern": "Advanced",
+    "LogRetentionDays": 30,
+    "EnableDetailedMonitoring": "true",
+    "EnableContainerInsights": "false",
+    "EnableAnomalyDetection": "true",
+    "NotificationEmail": "devops@company.com",
+    "SlackWebhookUrl": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+    "DashboardTimeRange": "-PT6H"
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Application": "Web Application Monitoring"
+  }
+}

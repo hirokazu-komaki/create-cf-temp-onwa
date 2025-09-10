@@ -1,0 +1,708 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠ELBテンプレート - Application Load BalancerとNetwork Load Balancer対応'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS06-BP01]
+    Security: [SEC05-BP01, SEC05-BP02, SEC09-BP01, SEC09-BP02]
+    Reliability: [REL08-BP01, REL08-BP02, REL10-BP01, REL11-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST07-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なALB設定 - HTTP/HTTPS対応"
+      LoadBalancerType: "application"
+      Features: ["BasicRouting", "HealthChecks"]
+    Advanced:
+      Description: "高度なALB設定 - SSL終端、複数ターゲットグループ"
+      LoadBalancerType: "application"
+      Features: ["SSLTermination", "MultipleTargetGroups", "AdvancedRouting", "WAF"]
+    Enterprise:
+      Description: "エンタープライズALB設定 - 完全なセキュリティと監視"
+      LoadBalancerType: "application"
+      Features: ["SSLTermination", "MultipleTargetGroups", "WAF", "AccessLogs", "Monitoring"]
+    NetworkBasic:
+      Description: "基本的なNLB設定 - TCP/UDP負荷分散"
+      LoadBalancerType: "network"
+      Features: ["BasicRouting", "HealthChecks"]
+    NetworkAdvanced:
+      Description: "高度なNLB設定 - クロスゾーン負荷分散、保存IPアドレス"
+      LoadBalancerType: "network"
+      Features: ["CrossZoneLoadBalancing", "PreserveClientIP", "Monitoring"]
+
+Parameters:
+
+  # Cross-Stack Import Parameters
+  ImportVPCId:
+    Type: String
+    Description: Import VPC ID from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+
+  ImportPublicSubnets:
+    Type: String
+    Description: Import Public Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PublicSubnets'
+
+  ImportAutoScalingGroupName:
+    Type: String
+    Description: Import Auto Scaling Group Name from compute-ec2 stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-ASG-Name'
+
+  ImportEC2SecurityGroupId:
+    Type: String
+    Description: Import EC2 Security Group ID from compute-ec2 stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-EC2-SG-Id'
+
+  ProjectName:
+    Type: String
+    Description: プロジェクト名（リソース名のプレフィックスとして使用）
+    Default: MyProject
+    
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    
+  LoadBalancerType:
+    Type: String
+    Description: ロードバランサーのタイプ
+    Default: application
+    AllowedValues: [application, network]
+    
+  ConfigurationPattern:
+    Type: String
+    Description: 設定パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise, NetworkBasic, NetworkAdvanced]
+    
+  VPCId:
+    Type: String
+    Description: VPC ID
+    
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: ロードバランサーを配置するサブネットのIDリスト（最低2つのAZ）
+    
+  Scheme:
+    Type: String
+    Description: ロードバランサーのスキーム
+    Default: internet-facing
+    AllowedValues: [internet-facing, internal]
+    
+  EnableAccessLogs:
+    Type: String
+    Description: アクセスログの有効化
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    
+  AccessLogsBucket:
+    Type: String
+    Description: アクセスログ用S3バケット名（アクセスログ有効時に必要）
+    Default: ''
+    
+  SSLCertificateArn:
+    Type: String
+    Description: SSL証明書のARN（HTTPS使用時に必要）
+    Default: ''
+    
+  EnableWAF:
+    Type: String
+    Description: AWS WAFの有効化（ALBのみ）
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    
+  HealthCheckPath:
+    Type: String
+    Description: ヘルスチェック用パス（ALBのみ）
+    Default: /health
+    
+  HealthCheckPort:
+    Type: Number
+    Description: ヘルスチェック用ポート
+    Default: 80
+    MinValue: 1
+    MaxValue: 65535
+    
+  TargetPort:
+    Type: Number
+    Description: ターゲットポート
+    Default: 80
+    MinValue: 1
+    MaxValue: 65535
+    
+  EnableCrossZoneLoadBalancing:
+    Type: String
+    Description: クロスゾーン負荷分散の有効化（NLBのみ）
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  IsApplicationLoadBalancer: !Equals [!Ref LoadBalancerType, 'application']
+  IsNetworkLoadBalancer: !Equals [!Ref LoadBalancerType, 'network']
+  EnableAccessLogging: !Equals [!Ref EnableAccessLogs, 'true']
+  HasAccessLogsBucket: !Not [!Equals [!Ref AccessLogsBucket, '']]
+  HasSSLCertificate: !Not [!Equals [!Ref SSLCertificateArn, '']]
+  EnableWAFIntegration: !And
+    - !Condition IsApplicationLoadBalancer
+    - !Equals [!Ref EnableWAF, 'true']
+  IsBasicPattern: !Equals [!Ref ConfigurationPattern, 'Basic']
+  IsAdvancedPattern: !Equals [!Ref ConfigurationPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref ConfigurationPattern, 'Enterprise']
+  IsNetworkBasicPattern: !Equals [!Ref ConfigurationPattern, 'NetworkBasic']
+  IsNetworkAdvancedPattern: !Equals [!Ref ConfigurationPattern, 'NetworkAdvanced']
+  EnableAdvancedFeatures: !Or
+    - !Condition IsAdvancedPattern
+    - !Condition IsEnterprisePattern
+    - !Condition IsNetworkAdvancedPattern
+  EnableCrossZone: !And
+    - !Condition IsNetworkLoadBalancer
+    - !Equals [!Ref EnableCrossZoneLoadBalancing, 'true']
+
+Resources:
+  # Security Group for Application Load Balancer
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: IsApplicationLoadBalancer
+    Properties:
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP traffic
+        - !If
+          - HasSSLCertificate
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+            Description: HTTPS traffic
+          - !Ref AWS::NoValue
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: !Ref TargetPort
+          ToPort: !Ref TargetPort
+          CidrIp: 10.0.0.0/8
+          Description: Traffic to targets
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-alb-sg'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Load Balancer
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-${LoadBalancerType}-lb'
+      Type: !Ref LoadBalancerType
+      Scheme: !Ref Scheme
+      Subnets: !Ref SubnetIds
+      SecurityGroups: !If
+        - IsApplicationLoadBalancer
+        - [!Ref ALBSecurityGroup]
+        - !Ref AWS::NoValue
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: !If [IsApplicationLoadBalancer, '60', !Ref AWS::NoValue]
+        - Key: routing.http2.enabled
+          Value: !If [IsApplicationLoadBalancer, 'true', !Ref AWS::NoValue]
+        - Key: access_logs.s3.enabled
+          Value: !If [EnableAccessLogging, 'true', 'false']
+        - !If
+          - !And [EnableAccessLogging, HasAccessLogsBucket]
+          - Key: access_logs.s3.bucket
+            Value: !Ref AccessLogsBucket
+          - !Ref AWS::NoValue
+        - !If
+          - !And [EnableAccessLogging, HasAccessLogsBucket]
+          - Key: access_logs.s3.prefix
+            Value: !Sub '${ProjectName}-${Environment}-${LoadBalancerType}-lb'
+          - !Ref AWS::NoValue
+        - !If
+          - EnableCrossZone
+          - Key: load_balancing.cross_zone.enabled
+            Value: 'true'
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-${LoadBalancerType}-lb'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Type
+          Value: !Ref LoadBalancerType
+        - Key: WellArchitected
+          Value: 'true'
+
+  # Target Group
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-tg'
+      Port: !Ref TargetPort
+      Protocol: !If
+        - IsApplicationLoadBalancer
+        - HTTP
+        - TCP
+      VpcId: !Ref VPCId
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: !If
+        - IsApplicationLoadBalancer
+        - !Ref HealthCheckPath
+        - !Ref AWS::NoValue
+      HealthCheckPort: !Ref HealthCheckPort
+      HealthCheckProtocol: !If
+        - IsApplicationLoadBalancer
+        - HTTP
+        - TCP
+      HealthCheckTimeoutSeconds: !If
+        - IsApplicationLoadBalancer
+        - 5
+        - !Ref AWS::NoValue
+      HealthyThresholdCount: !If
+        - IsApplicationLoadBalancer
+        - 2
+        - 3
+      UnhealthyThresholdCount: !If
+        - IsApplicationLoadBalancer
+        - 2
+        - 3
+      Matcher: !If
+        - IsApplicationLoadBalancer
+        - HttpCode: '200'
+        - !Ref AWS::NoValue
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '300'
+        - !If
+          - IsApplicationLoadBalancer
+          - Key: stickiness.enabled
+            Value: 'false'
+          - !Ref AWS::NoValue
+        - !If
+          - IsNetworkLoadBalancer
+          - Key: preserve_client_ip.enabled
+            Value: 'true'
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-tg'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # HTTP Listener
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - !If
+          - HasSSLCertificate
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: '443'
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !If
+        - IsApplicationLoadBalancer
+        - 80
+        - !Ref TargetPort
+      Protocol: !If
+        - IsApplicationLoadBalancer
+        - HTTP
+        - TCP
+
+  # HTTPS Listener (ALB with SSL certificate)
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: !And [IsApplicationLoadBalancer, HasSSLCertificate]
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref SSLCertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
+
+  # Secondary Target Group (Advanced patterns)
+  SecondaryTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: EnableAdvancedFeatures
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-secondary-tg'
+      Port: !Ref TargetPort
+      Protocol: !If
+        - IsApplicationLoadBalancer
+        - HTTP
+        - TCP
+      VpcId: !Ref VPCId
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: !If
+        - IsApplicationLoadBalancer
+        - !Ref HealthCheckPath
+        - !Ref AWS::NoValue
+      HealthCheckPort: !Ref HealthCheckPort
+      HealthCheckProtocol: !If
+        - IsApplicationLoadBalancer
+        - HTTP
+        - TCP
+      HealthCheckTimeoutSeconds: !If
+        - IsApplicationLoadBalancer
+        - 5
+        - !Ref AWS::NoValue
+      HealthyThresholdCount: !If
+        - IsApplicationLoadBalancer
+        - 2
+        - 3
+      UnhealthyThresholdCount: !If
+        - IsApplicationLoadBalancer
+        - 2
+        - 3
+      Matcher: !If
+        - IsApplicationLoadBalancer
+        - HttpCode: '200'
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-secondary-tg'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Listener Rule for path-based routing (ALB Advanced patterns)
+  PathBasedListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: !And [IsApplicationLoadBalancer, EnableAdvancedFeatures]
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref SecondaryTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/api/*'
+      ListenerArn: !If
+        - HasSSLCertificate
+        - !Ref HTTPSListener
+        - !Ref HTTPListener
+      Priority: 100  
+# WAF Web ACL (ALB with WAF enabled)
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: EnableWAFIntegration
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-web-acl'
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      Rules:
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSetMetric
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputsRuleSetMetric
+        - Name: RateLimitRule
+          Priority: 3
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRuleMetric
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${ProjectName}${Environment}WebACL'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-web-acl'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WAF Association
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Condition: EnableWAFIntegration
+    Properties:
+      ResourceArn: !Ref LoadBalancer
+      WebACLArn: !GetAtt WebACL.Arn
+
+  # CloudWatch Alarms
+  TargetResponseTimeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: EnableAdvancedFeatures
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-target-response-time'
+      AlarmDescription: 'Target response time is too high'
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1.0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      AlarmActions:
+        - !Ref LoadBalancerAlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-response-time-alarm'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  UnHealthyHostCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: EnableAdvancedFeatures
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-unhealthy-host-count'
+      AlarmDescription: 'Unhealthy host count is too high'
+      MetricName: UnHealthyHostCount
+      Namespace: !If
+        - IsApplicationLoadBalancer
+        - AWS/ApplicationELB
+        - AWS/NetworkELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+      AlarmActions:
+        - !Ref LoadBalancerAlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-unhealthy-host-alarm'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  HTTPCodeTarget5XXCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: !And [IsApplicationLoadBalancer, EnableAdvancedFeatures]
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-target-5xx-errors'
+      AlarmDescription: 'Target 5XX error count is too high'
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      AlarmActions:
+        - !Ref LoadBalancerAlarmTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-5xx-error-alarm'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topic for Load Balancer Alarms
+  LoadBalancerAlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: EnableAdvancedFeatures
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-lb-alarms'
+      DisplayName: 'Load Balancer Alarms'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lb-alarm-topic'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Dashboard (Enterprise pattern)
+  LoadBalancerDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: IsEnterprisePattern
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}-LoadBalancer-Dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/${LoadBalancerType == 'application' ? 'ApplicationELB' : 'NetworkELB'}", "RequestCount", "LoadBalancer", "${LoadBalancer.LoadBalancerFullName}" ],
+                  [ ".", "TargetResponseTime", ".", "." ],
+                  [ ".", "HTTPCode_Target_2XX_Count", ".", "." ],
+                  [ ".", "HTTPCode_Target_4XX_Count", ".", "." ],
+                  [ ".", "HTTPCode_Target_5XX_Count", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Load Balancer Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/${LoadBalancerType == 'application' ? 'ApplicationELB' : 'NetworkELB'}", "HealthyHostCount", "TargetGroup", "${TargetGroup.TargetGroupFullName}" ],
+                  [ ".", "UnHealthyHostCount", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Target Health",
+                "period": 300
+              }
+            }
+          ]
+        }
+
+Outputs:
+  LoadBalancerId:
+    Description: Load Balancer ID
+    Value: !Ref LoadBalancer
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-ID'
+
+  LoadBalancerArn:
+    Description: Load Balancer ARN
+    Value: !Ref LoadBalancer
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-ARN'
+
+  LoadBalancerDNSName:
+    Description: Load Balancer DNS Name
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-DNSName'
+
+  LoadBalancerHostedZoneId:
+    Description: Load Balancer Hosted Zone ID
+    Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-HostedZoneID'
+
+  TargetGroupArn:
+    Description: Target Group ARN
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-TargetGroup-ARN'
+
+  SecondaryTargetGroupArn:
+    Condition: EnableAdvancedFeatures
+    Description: Secondary Target Group ARN
+    Value: !Ref SecondaryTargetGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-SecondaryTargetGroup-ARN'
+
+  ALBSecurityGroupId:
+    Condition: IsApplicationLoadBalancer
+    Description: ALB Security Group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ALB-SecurityGroup-ID'
+
+  HTTPListenerArn:
+    Description: HTTP Listener ARN
+    Value: !Ref HTTPListener
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-HTTPListener-ARN'
+
+  HTTPSListenerArn:
+    Condition: !And [IsApplicationLoadBalancer, HasSSLCertificate]
+    Description: HTTPS Listener ARN
+    Value: !Ref HTTPSListener
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-HTTPSListener-ARN'
+
+  WebACLArn:
+    Condition: EnableWAFIntegration
+    Description: WAF Web ACL ARN
+    Value: !GetAtt WebACL.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebACL-ARN'
+
+  LoadBalancerAlarmTopicArn:
+    Condition: EnableAdvancedFeatures
+    Description: Load Balancer Alarm Topic ARN
+    Value: !Ref LoadBalancerAlarmTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LBAlarmTopic-ARN'
+
+  LoadBalancerType:
+    Description: Load Balancer Type
+    Value: !Ref LoadBalancerType
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-Type'
+
+  LoadBalancerScheme:
+    Description: Load Balancer Scheme
+    Value: !Ref Scheme
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LoadBalancer-Scheme'

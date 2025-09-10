@@ -1,0 +1,713 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠KMS暗号化キー管理テンプレート - キーローテーション、アクセス制御、複数用途パターン'
+
+Metadata:
+  WellArchitectedCompliance:
+    Security:
+      - SEC08-BP01  # 保存時の暗号化を実装する
+      - SEC08-BP02  # 転送時の暗号化を実装する
+      - SEC08-BP03  # 暗号化キーを自動化して管理する
+      - SEC08-BP04  # 暗号化キーの使用を強制する
+      - SEC02-BP01  # 最小権限の原則を使用する
+    OperationalExcellence:
+      - OPS04-BP01  # 設定管理システムを実装する
+      - OPS05-BP01  # 自動化を使用してデプロイメントリスクを軽減する
+    Reliability:
+      - REL03-BP01  # 自動復旧機能を実装する
+      - REL03-BP02  # 可用性目標を達成するために必要なすべてのコンポーネントを特定する
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なKMS設定 - 単一用途キー"
+      UseCases: ["開発環境", "シンプルな暗号化要件"]
+    Advanced:
+      Description: "高度なKMS設定 - 複数用途キー、詳細アクセス制御"
+      UseCases: ["本番環境", "複雑な暗号化要件"]
+    Enterprise:
+      Description: "エンタープライズKMS設定 - 包括的キー管理、監査"
+      UseCases: ["大規模組織", "厳格なコンプライアンス"]
+
+Parameters:
+  KMSPattern:
+    Type: String
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+    Description: KMS設定パターンの選択
+  
+  ProjectName:
+    Type: String
+    Default: MyProject
+    Description: プロジェクト名
+    
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: 環境名
+    
+  EnableKeyRotation:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 自動キーローテーションを有効にするか
+    
+  KeyUsage:
+    Type: String
+    Default: ENCRYPT_DECRYPT
+    AllowedValues: [ENCRYPT_DECRYPT, SIGN_VERIFY]
+    Description: キーの使用目的
+    
+  KeySpec:
+    Type: String
+    Default: SYMMETRIC_DEFAULT
+    AllowedValues: [SYMMETRIC_DEFAULT, RSA_2048, RSA_3072, RSA_4096, ECC_NIST_P256, ECC_NIST_P384, ECC_NIST_P521, ECC_SECG_P256K1]
+    Description: キーの仕様
+    
+  DeletionWindowInDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    MaxValue: 30
+    Description: キー削除の待機期間（日数）
+    
+  CrossAccountAccessRoleArns:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: クロスアカウントアクセスを許可するロールARNのリスト
+    
+  EnableCloudTrailIntegration:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: CloudTrailとの統合を有効にするか
+
+Conditions:
+  IsKeyRotationEnabled: !Equals [!Ref EnableKeyRotation, 'true']
+  IsCloudTrailIntegrationEnabled: !Equals [!Ref EnableCloudTrailIntegration, 'true']
+  IsBasicPattern: !Equals [!Ref KMSPattern, 'Basic']
+  IsAdvancedPattern: !Equals [!Ref KMSPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref KMSPattern, 'Enterprise']
+  HasCrossAccountAccess: !Not [!Equals [!Join ['', !Ref CrossAccountAccessRoleArns], '']]
+
+Mappings:
+  KeyPurposes:
+    Basic:
+      GeneralPurpose: 'true'
+      S3Encryption: 'false'
+      RDSEncryption: 'false'
+      EBSEncryption: 'false'
+      SecretsManager: 'false'
+      CloudTrail: 'false'
+    Advanced:
+      GeneralPurpose: 'true'
+      S3Encryption: 'true'
+      RDSEncryption: 'true'
+      EBSEncryption: 'true'
+      SecretsManager: 'false'
+      CloudTrail: 'false'
+    Enterprise:
+      GeneralPurpose: 'true'
+      S3Encryption: 'true'
+      RDSEncryption: 'true'
+      EBSEncryption: 'true'
+      SecretsManager: 'true'
+      CloudTrail: 'true'
+
+Resources:
+  # 汎用暗号化キー
+  GeneralPurposeKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} 汎用暗号化キー'
+      KeyUsage: !Ref KeyUsage
+      KeySpec: !Ref KeySpec
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow use of the key for encryption
+            Effect: Allow
+            Principal:
+              AWS: 
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+          - Sid: Allow attachment of persistent resources
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:CreateGrant
+              - kms:ListGrants
+              - kms:RevokeGrant
+            Resource: '*'
+            Condition:
+              Bool:
+                'kms:GrantIsForAWSResource': 'true'
+          - !If
+            - HasCrossAccountAccess
+            - Sid: Allow cross-account access
+              Effect: Allow
+              Principal:
+                AWS: !Ref CrossAccountAccessRoleArns
+              Action:
+                - kms:Encrypt
+                - kms:Decrypt
+                - kms:ReEncrypt*
+                - kms:GenerateDataKey*
+                - kms:DescribeKey
+              Resource: '*'
+            - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-general-purpose-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: GeneralPurpose
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  GeneralPurposeKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-general-purpose'
+      TargetKeyId: !Ref GeneralPurposeKey
+
+  # S3専用暗号化キー（Advanced以上）
+  S3EncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: IsAdvancedPattern
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} S3専用暗号化キー'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow S3 Service
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 's3.${AWS::Region}.amazonaws.com'
+          - Sid: Allow use of the key for S3
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 's3.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-s3-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: S3Encryption
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  S3EncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsAdvancedPattern
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-s3-encryption'
+      TargetKeyId: !Ref S3EncryptionKey  # R
+DS専用暗号化キー（Advanced以上）
+  RDSEncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: IsAdvancedPattern
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} RDS専用暗号化キー'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow RDS Service
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'rds.${AWS::Region}.amazonaws.com'
+          - Sid: Allow use of the key for RDS
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'rds.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-rds-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: RDSEncryption
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  RDSEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsAdvancedPattern
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-rds-encryption'
+      TargetKeyId: !Ref RDSEncryptionKey
+
+  # EBS専用暗号化キー（Advanced以上）
+  EBSEncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: IsAdvancedPattern
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} EBS専用暗号化キー'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow EC2 Service
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'ec2.${AWS::Region}.amazonaws.com'
+          - Sid: Allow use of the key for EBS
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+              - kms:CreateGrant
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'ec2.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ebs-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: EBSEncryption
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  EBSEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsAdvancedPattern
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-ebs-encryption'
+      TargetKeyId: !Ref EBSEncryptionKey
+
+  # Secrets Manager専用暗号化キー（Enterprise）
+  SecretsManagerEncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: IsEnterprisePattern
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} Secrets Manager専用暗号化キー'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow Secrets Manager Service
+            Effect: Allow
+            Principal:
+              Service: secretsmanager.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+          - Sid: Allow use of the key for Secrets Manager
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-secrets-manager-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: SecretsManagerEncryption
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  SecretsManagerEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsEnterprisePattern
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-secrets-manager-encryption'
+      TargetKeyId: !Ref SecretsManagerEncryptionKey
+
+  # CloudTrail専用暗号化キー（Enterprise）
+  CloudTrailEncryptionKey:
+    Type: AWS::KMS::Key
+    Condition: IsEnterprisePattern
+    Properties:
+      Description: !Sub '${ProjectName}-${Environment} CloudTrail専用暗号化キー'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: !Ref EnableKeyRotation
+      PendingWindowInDays: !Ref DeletionWindowInDays
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow CloudTrail Service
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:EncryptionContext:aws:cloudtrail:arn': !Sub 'arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${ProjectName}-${Environment}-trail'
+          - Sid: Allow CloudTrail to describe key
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action:
+              - kms:DescribeKey
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-cloudtrail-encryption-key'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Purpose
+          Value: CloudTrailEncryption
+        - Key: WellArchitected
+          Value: SEC08-BP01
+
+  CloudTrailEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: IsEnterprisePattern
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-${Environment}-cloudtrail-encryption'
+      TargetKeyId: !Ref CloudTrailEncryptionKey
+
+  # キー使用状況監視用CloudWatch Alarms
+  GeneralPurposeKeyUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-general-purpose-key-usage'
+      AlarmDescription: '汎用キーの使用状況監視'
+      MetricName: NumberOfRequestsSucceeded
+      Namespace: AWS/KMS
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: KeyId
+          Value: !Ref GeneralPurposeKey
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-general-purpose-key-usage-alarm'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # キーローテーション監視用CloudWatch Event Rule
+  KeyRotationEventRule:
+    Type: AWS::Events::Rule
+    Condition: IsKeyRotationEnabled
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-key-rotation-event'
+      Description: 'KMSキーローテーションイベントの監視'
+      EventPattern:
+        source:
+          - aws.kms
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - kms.amazonaws.com
+          eventName:
+            - RotateKey
+          resources:
+            ARN:
+              - !GetAtt GeneralPurposeKey.Arn
+      State: ENABLED
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-key-rotation-event'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  GeneralPurposeKeyId:
+    Description: '汎用暗号化キーID'
+    Value: !Ref GeneralPurposeKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-general-purpose-key-id'
+
+  GeneralPurposeKeyArn:
+    Description: '汎用暗号化キーARN'
+    Value: !GetAtt GeneralPurposeKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-general-purpose-key-arn'
+
+  GeneralPurposeKeyAlias:
+    Description: '汎用暗号化キーエイリアス'
+    Value: !Ref GeneralPurposeKeyAlias
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-general-purpose-key-alias'
+
+  S3EncryptionKeyId:
+    Condition: IsAdvancedPattern
+    Description: 'S3専用暗号化キーID'
+    Value: !Ref S3EncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-s3-encryption-key-id'
+
+  S3EncryptionKeyArn:
+    Condition: IsAdvancedPattern
+    Description: 'S3専用暗号化キーARN'
+    Value: !GetAtt S3EncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-s3-encryption-key-arn'
+
+  RDSEncryptionKeyId:
+    Condition: IsAdvancedPattern
+    Description: 'RDS専用暗号化キーID'
+    Value: !Ref RDSEncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-rds-encryption-key-id'
+
+  RDSEncryptionKeyArn:
+    Condition: IsAdvancedPattern
+    Description: 'RDS専用暗号化キーARN'
+    Value: !GetAtt RDSEncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-rds-encryption-key-arn'
+
+  EBSEncryptionKeyId:
+    Condition: IsAdvancedPattern
+    Description: 'EBS専用暗号化キーID'
+    Value: !Ref EBSEncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ebs-encryption-key-id'
+
+  EBSEncryptionKeyArn:
+    Condition: IsAdvancedPattern
+    Description: 'EBS専用暗号化キーARN'
+    Value: !GetAtt EBSEncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ebs-encryption-key-arn'
+
+  SecretsManagerEncryptionKeyId:
+    Condition: IsEnterprisePattern
+    Description: 'Secrets Manager専用暗号化キーID'
+    Value: !Ref SecretsManagerEncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-secrets-manager-encryption-key-id'
+
+  SecretsManagerEncryptionKeyArn:
+    Condition: IsEnterprisePattern
+    Description: 'Secrets Manager専用暗号化キーARN'
+    Value: !GetAtt SecretsManagerEncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-secrets-manager-encryption-key-arn'
+
+  CloudTrailEncryptionKeyId:
+    Condition: IsEnterprisePattern
+    Description: 'CloudTrail専用暗号化キーID'
+    Value: !Ref CloudTrailEncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cloudtrail-encryption-key-id'
+
+  CloudTrailEncryptionKeyArn:
+    Condition: IsEnterprisePattern
+    Description: 'CloudTrail専用暗号化キーARN'
+    Value: !GetAtt CloudTrailEncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cloudtrail-encryption-key-arn'
+
+  KMSPattern:
+    Description: '使用されたKMSパターン'
+    Value: !Ref KMSPattern
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-kms-pattern'
+  # Cross-Stack Integration Outputs
+  ApplicationKMSKeyId:
+    Description: アプリケーション用KMSキーID（汎用キー）
+    Value: !Ref GeneralPurposeKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-application-kms-key-id'
+
+  ApplicationKMSKeyArn:
+    Description: アプリケーション用KMSキーARN（汎用キー）
+    Value: !GetAtt GeneralPurposeKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-application-kms-key-arn'
+
+  DatabaseKMSKeyId:
+    Condition: IsAdvancedPattern
+    Description: データベース用KMSキーID
+    Value: !Ref RDSEncryptionKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-database-kms-key-id'
+
+  DatabaseKMSKeyArn:
+    Condition: IsAdvancedPattern
+    Description: データベース用KMSキーARN
+    Value: !GetAtt RDSEncryptionKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-database-kms-key-arn'
+
+  StorageKMSKeyId:
+    Condition: IsAdvancedPattern
+    Description: ストレージ用KMSキーID（S3/EBS）
+    Value: !If
+      - IsAdvancedPattern
+      - !Ref S3EncryptionKey
+      - !Ref GeneralPurposeKey
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-storage-kms-key-id'
+
+  StorageKMSKeyArn:
+    Condition: IsAdvancedPattern
+    Description: ストレージ用KMSキーARN（S3/EBS）
+    Value: !If
+      - IsAdvancedPattern
+      - !GetAtt S3EncryptionKey.Arn
+      - !GetAtt GeneralPurposeKey.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-storage-kms-key-arn'

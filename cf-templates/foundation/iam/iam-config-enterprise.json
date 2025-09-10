@@ -1,0 +1,30 @@
+{
+  "Parameters": {
+    "PermissionPattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "EnableCrossAccountAccess": "true",
+    "TrustedAccountIds": ["123456789012", "987654321098", "456789012345"],
+    "EnableMFARequirement": "true",
+    "SessionDurationHours": 1,
+    "EnablePasswordPolicy": "true",
+    "RequireSymbols": "true",
+    "RequireNumbers": "true",
+    "RequireUppercase": "true",
+    "RequireLowercase": "true",
+    "MinPasswordLength": 14,
+    "MaxPasswordAge": 90,
+    "PasswordReusePrevention": 12,
+    "EnableAccessAnalyzer": "true",
+    "EnableCloudTrailIntegration": "true"
+  },
+  "Tags": {
+    "Owner": "Security Team",
+    "CostCenter": "Security",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "Security,OperationalExcellence",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズIAM設定 - 最高レベルのセキュリティ、コンプライアンス対応"
+}

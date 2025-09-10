@@ -1,0 +1,12 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "dev",
+  "ApplicationPattern": "Basic",
+  "InstanceType": "t3.small",
+  "MinSize": 1,
+  "MaxSize": 3,
+  "DBInstanceClass": "db.t3.micro",
+  "DBAllocatedStorage": 20,
+  "EnableMultiAZ": "false",
+  "EnableBackup": "true"
+}

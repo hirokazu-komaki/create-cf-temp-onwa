@@ -1,0 +1,583 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠Webアプリケーション統合パターン - ALB + EC2 + RDS + CloudWatch'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS05-BP01, OPS07-BP01]
+    Security: [SEC01-BP01, SEC02-BP01, SEC05-BP01, SEC08-BP01]
+    Reliability: [REL01-BP04, REL02-BP01, REL03-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST06-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  IntegrationPattern:
+    Name: WebApplication
+    Description: "典型的なWebアプリケーション構成"
+    Components: ["ALB", "EC2", "RDS", "CloudWatch", "S3"]
+    Dependencies: ["networking-vpc", "foundation-iam", "foundation-kms"]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+    Default: MyWebApp
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ApplicationPattern:
+    Type: String
+    Description: アプリケーションパターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+  
+  # Cross-Stack Import Parameters
+  ImportVPCId:
+    Type: String
+    Description: Import VPC ID from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+
+  ImportPublicSubnets:
+    Type: String
+    Description: Import Public Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PublicSubnets'
+
+  ImportPrivateSubnets:
+    Type: String
+    Description: Import Private Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
+
+  ImportDatabaseSubnets:
+    Type: String
+    Description: Import Database Subnets from networking-vpc stack
+    Default: ''
+
+  ImportExecutionRoleArn:
+    Type: String
+    Description: Import Execution Role ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+
+  ImportApplicationKMSKeyArn:
+    Type: String
+    Description: Import Application KMS Key ARN from foundation-kms stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
+
+  ImportDatabaseKMSKeyArn:
+    Type: String
+    Description: Import Database KMS Key ARN from foundation-kms stack
+    Default: ''
+
+  ImportAlertTopicArn:
+    Type: String
+    Description: Import Alert Topic ARN from integration-cloudwatch stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-alert-topic-arn'
+
+  # Application-specific Parameters
+  InstanceType:
+    Type: String
+    Description: EC2インスタンスタイプ
+    Default: t3.medium
+    AllowedValues: [t3.micro, t3.small, t3.medium, t3.large, m5.large, m5.xlarge]
+  
+  MinSize:
+    Type: Number
+    Description: Auto Scaling最小サイズ
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+  
+  MaxSize:
+    Type: Number
+    Description: Auto Scaling最大サイズ
+    Default: 6
+    MinValue: 1
+    MaxValue: 20
+  
+  DBInstanceClass:
+    Type: String
+    Description: RDSインスタンスクラス
+    Default: db.t3.micro
+    AllowedValues: [db.t3.micro, db.t3.small, db.t3.medium, db.r5.large, db.r5.xlarge]
+  
+  DBAllocatedStorage:
+    Type: Number
+    Description: RDS割り当てストレージ（GB）
+    Default: 20
+    MinValue: 20
+    MaxValue: 1000
+  
+  EnableMultiAZ:
+    Type: String
+    Description: RDS Multi-AZを有効にする
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  EnableBackup:
+    Type: String
+    Description: 自動バックアップを有効にする
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  IsAdvancedPattern: !Equals [!Ref ApplicationPattern, Advanced]
+  IsEnterprisePattern: !Equals [!Ref ApplicationPattern, Enterprise]
+  EnableMultiAZCondition: !Equals [!Ref EnableMultiAZ, 'true']
+  EnableBackupCondition: !Equals [!Ref EnableBackup, 'true']
+  HasDatabaseSubnets: !Not [!Equals [!Ref ImportDatabaseSubnets, '']]
+
+Mappings:
+  ApplicationSettings:
+    Basic:
+      HealthCheckPath: /health
+      HealthCheckInterval: 30
+      HealthyThreshold: 2
+      UnhealthyThreshold: 5
+    Advanced:
+      HealthCheckPath: /api/health
+      HealthCheckInterval: 15
+      HealthyThreshold: 2
+      UnhealthyThreshold: 3
+    Enterprise:
+      HealthCheckPath: /api/v1/health
+      HealthCheckInterval: 10
+      HealthyThreshold: 2
+      UnhealthyThreshold: 2
+
+Resources:
+  # S3 Bucket for Static Assets
+  StaticAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-static-assets-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ImportApplicationKMSKeyArn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-static-assets'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Pattern
+          Value: WebApplication
+
+  # CloudFront Distribution for Static Assets
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt StaticAssetsBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingOptimized
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # CORS-S3Origin
+        Enabled: true
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Tags:
+          - Key: Name
+            Value: !Sub '${ProjectName}-${Environment}-cloudfront'
+          - Key: Environment
+            Value: !Ref Environment
+          - Key: Project
+            Value: !Ref ProjectName
+
+  CloudFrontOAI:
+    Type: AWS::CloudFront::OriginAccessIdentity
+    Properties:
+      OriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${ProjectName}-${Environment}'
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-alb'
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets: !Split [',', !Ref ImportPublicSubnets]
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-alb'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-alb-sg'
+      GroupDescription: Security Group for Application Load Balancer
+      VpcId: !Ref ImportVPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from internet
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-alb-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Target Group
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-tg'
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref ImportVPCId
+      HealthCheckPath: !FindInMap [ApplicationSettings, !Ref ApplicationPattern, HealthCheckPath]
+      HealthCheckIntervalSeconds: !FindInMap [ApplicationSettings, !Ref ApplicationPattern, HealthCheckInterval]
+      HealthyThresholdCount: !FindInMap [ApplicationSettings, !Ref ApplicationPattern, HealthyThreshold]
+      UnhealthyThresholdCount: !FindInMap [ApplicationSettings, !Ref ApplicationPattern, UnhealthyThreshold]
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-tg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # EC2 Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-ec2-sg'
+      GroupDescription: Security Group for EC2 instances
+      VpcId: !Ref ImportVPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: HTTP from ALB
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/8
+          Description: SSH from VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ec2-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-${Environment}-lt'
+      LaunchTemplateData:
+        ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !Ref ImportExecutionRoleArn
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+            
+            # Simple web application
+            cat > /var/www/html/index.html << 'EOF'
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${ProjectName} - ${Environment}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; }
+                    .header { background: #232f3e; color: white; padding: 20px; }
+                    .content { padding: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>${ProjectName}</h1>
+                    <p>Environment: ${Environment}</p>
+                </div>
+                <div class="content">
+                    <h2>Web Application Pattern</h2>
+                    <p>This is a Well-Architected compliant web application.</p>
+                    <p>Instance ID: <span id="instance-id">Loading...</span></p>
+                </div>
+                <script>
+                    fetch('http://169.254.169.254/latest/meta-data/instance-id')
+                        .then(response => response.text())
+                        .then(data => document.getElementById('instance-id').textContent = data);
+                </script>
+            </body>
+            </html>
+            EOF
+            
+            # Health check endpoint
+            cat > /var/www/html/health << 'EOF'
+            OK
+            EOF
+            
+            # API health check endpoint
+            mkdir -p /var/www/html/api/v1
+            cat > /var/www/html/api/health << 'EOF'
+            {"status": "healthy", "timestamp": "$(date -Iseconds)"}
+            EOF
+            
+            cat > /var/www/html/api/v1/health << 'EOF'
+            {"status": "healthy", "version": "1.0", "timestamp": "$(date -Iseconds)"}
+            EOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-instance'
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: Pattern
+                Value: WebApplication
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-${Environment}-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref MinSize
+      VPCZoneIdentifier: !Split [',', !Ref ImportPrivateSubnets]
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-asg'
+          PropagateAtLaunch: false
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: true
+        - Key: Pattern
+          Value: WebApplication
+          PropagateAtLaunch: true
+
+  # RDS Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds: !If
+        - HasDatabaseSubnets
+        - !Split [',', !Ref ImportDatabaseSubnets]
+        - !Split [',', !Ref ImportPrivateSubnets]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # RDS Security Group
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-rds-sg'
+      GroupDescription: Security Group for RDS database
+      VpcId: !Ref ImportVPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+          Description: MySQL from EC2
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-rds-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # RDS Database
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-db'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: '8.0'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp2
+      StorageEncrypted: true
+      KmsKeyId: !If
+        - HasDatabaseSubnets
+        - !Ref ImportDatabaseKMSKeyArn
+        - !Ref ImportApplicationKMSKeyArn
+      DBName: !Sub '${ProjectName}${Environment}'
+      MasterUsername: admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      MultiAZ: !Ref EnableMultiAZ
+      BackupRetentionPeriod: !If [EnableBackupCondition, 7, 0]
+      DeleteAutomatedBackups: !If [IsProduction, false, true]
+      DeletionProtection: !If [IsProduction, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Pattern
+          Value: WebApplication
+
+  # CloudWatch Alarms
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-high-cpu'
+      AlarmDescription: High CPU utilization alarm
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-high-cpu'
+      AlarmDescription: Database high CPU utilization alarm
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref Database
+
+Outputs:
+  ApplicationLoadBalancerDNS:
+    Description: Application Load Balancer DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-ALB-DNS'
+
+  ApplicationLoadBalancerArn:
+    Description: Application Load Balancer ARN
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-ALB-Arn'
+
+  CloudFrontDistributionDomain:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-CloudFront-Domain'
+
+  StaticAssetsBucketName:
+    Description: Static Assets S3 Bucket Name
+    Value: !Ref StaticAssetsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-StaticAssets-Bucket'
+
+  DatabaseEndpoint:
+    Description: RDS Database Endpoint
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-DB-Endpoint'
+
+  AutoScalingGroupName:
+    Description: Auto Scaling Group Name
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-ASG-Name'
+
+  ApplicationURL:
+    Description: Application URL
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WebApp-URL'

@@ -1,0 +1,915 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠VPCテンプレート - マルチAZ配置とプライベート/パブリックサブネット対応'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02]
+    Security: [SEC05-BP01, SEC05-BP02, SEC05-BP03]
+    Reliability: [REL10-BP01, REL10-BP02, REL11-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なVPC設定 - 2AZ、パブリック/プライベートサブネット各1つ"
+      SubnetCount: 4
+      NATGateways: 1
+    Advanced:
+      Description: "高度なVPC設定 - 3AZ、複数サブネット、冗長NAT"
+      SubnetCount: 9
+      NATGateways: 3
+    Enterprise:
+      Description: "エンタープライズVPC設定 - 3AZ、完全分離、高可用性"
+      SubnetCount: 12
+      NATGateways: 3
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名（リソース名のプレフィックスとして使用）
+    Default: MyProject
+    
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    
+  VpcCidr:
+    Type: String
+    Description: VPCのCIDRブロック
+    Default: 10.0.0.0/16
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    
+  SubnetPattern:
+    Type: String
+    Description: サブネット配置パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+    
+  EnableDnsHostnames:
+    Type: String
+    Description: DNS ホスト名の有効化
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    
+  EnableDnsSupport:
+    Type: String
+    Description: DNS サポートの有効化
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    
+  EnableNatGateway:
+    Type: String
+    Description: NAT Gatewayの有効化
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    
+  SingleNatGateway:
+    Type: String
+    Description: 単一NAT Gateway使用（コスト最適化）
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  CreateNatGateway: !Equals [!Ref EnableNatGateway, 'true']
+  CreateSingleNat: !And
+    - !Condition CreateNatGateway
+    - !Equals [!Ref SingleNatGateway, 'true']
+  CreateMultipleNat: !And
+    - !Condition CreateNatGateway
+    - !Equals [!Ref SingleNatGateway, 'false']
+  IsBasicPattern: !Equals [!Ref SubnetPattern, 'Basic']
+  IsAdvancedPattern: !Equals [!Ref SubnetPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref SubnetPattern, 'Enterprise']
+
+Mappings:
+  SubnetConfiguration:
+    Basic:
+      PublicSubnet1Cidr: 10.0.1.0/24
+      PublicSubnet2Cidr: 10.0.2.0/24
+      PrivateSubnet1Cidr: 10.0.11.0/24
+      PrivateSubnet2Cidr: 10.0.12.0/24
+      AvailabilityZoneCount: 2
+    Advanced:
+      PublicSubnet1Cidr: 10.0.1.0/24
+      PublicSubnet2Cidr: 10.0.2.0/24
+      PublicSubnet3Cidr: 10.0.3.0/24
+      PrivateSubnet1Cidr: 10.0.11.0/24
+      PrivateSubnet2Cidr: 10.0.12.0/24
+      PrivateSubnet3Cidr: 10.0.13.0/24
+      DatabaseSubnet1Cidr: 10.0.21.0/24
+      DatabaseSubnet2Cidr: 10.0.22.0/24
+      DatabaseSubnet3Cidr: 10.0.23.0/24
+      AvailabilityZoneCount: 3
+    Enterprise:
+      PublicSubnet1Cidr: 10.0.1.0/24
+      PublicSubnet2Cidr: 10.0.2.0/24
+      PublicSubnet3Cidr: 10.0.3.0/24
+      PrivateSubnet1Cidr: 10.0.11.0/24
+      PrivateSubnet2Cidr: 10.0.12.0/24
+      PrivateSubnet3Cidr: 10.0.13.0/24
+      DatabaseSubnet1Cidr: 10.0.21.0/24
+      DatabaseSubnet2Cidr: 10.0.22.0/24
+      DatabaseSubnet3Cidr: 10.0.23.0/24
+      ManagementSubnet1Cidr: 10.0.31.0/24
+      ManagementSubnet2Cidr: 10.0.32.0/24
+      ManagementSubnet3Cidr: 10.0.33.0/24
+      AvailabilityZoneCount: 3
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: !Ref EnableDnsHostnames
+      EnableDnsSupport: !Ref EnableDnsSupport
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-vpc'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: WellArchitected
+          Value: 'true'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-igw'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PublicSubnet1Cidr]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-subnet-1'
+        - Key: Type
+          Value: Public
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PublicSubnet2Cidr]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-subnet-2'
+        - Key: Type
+          Value: Public
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PublicSubnet3Cidr]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-subnet-3'
+        - Key: Type
+          Value: Public
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PrivateSubnet1Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-subnet-1'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PrivateSubnet2Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-subnet-2'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, PrivateSubnet3Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-subnet-3'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment 
+ # Database Subnets (Advanced and Enterprise patterns)
+  DatabaseSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, DatabaseSubnet1Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-database-subnet-1'
+        - Key: Type
+          Value: Database
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, DatabaseSubnet2Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-database-subnet-2'
+        - Key: Type
+          Value: Database
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, DatabaseSubnet3Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-database-subnet-3'
+        - Key: Type
+          Value: Database
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Management Subnets (Enterprise pattern only)
+  ManagementSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, ManagementSubnet1Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-management-subnet-1'
+        - Key: Type
+          Value: Management
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ManagementSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, ManagementSubnet2Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-management-subnet-2'
+        - Key: Type
+          Value: Management
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ManagementSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [SubnetConfiguration, !Ref SubnetPattern, ManagementSubnet3Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-management-subnet-3'
+        - Key: Type
+          Value: Management
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # NAT Gateways
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateNatGateway
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-eip-1'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateMultipleNat
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-eip-2'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGateway3EIP:
+    Type: AWS::EC2::EIP
+    Condition: !And
+      - !Condition CreateMultipleNat
+      - !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-eip-3'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateNatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-gateway-1'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateMultipleNat
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-gateway-2'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGateway3:
+    Type: AWS::EC2::NatGateway
+    Condition: !And
+      - !Condition CreateMultipleNat
+      - !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      AllocationId: !GetAtt NatGateway3EIP.AllocationId
+      SubnetId: !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-gateway-3'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-rt'
+        - Key: Type
+          Value: Public
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet3
+
+  # Private Route Tables
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-rt-1'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Condition: CreateNatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-rt-2'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Condition: CreateNatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If
+        - CreateSingleNat
+        - !Ref NatGateway1
+        - !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-rt-3'
+        - Key: Type
+          Value: Private
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DefaultPrivateRoute3:
+    Type: AWS::EC2::Route
+    Condition: !And
+      - CreateNatGateway
+      - !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If
+        - CreateSingleNat
+        - !Ref NatGateway1
+        - !Ref NatGateway3
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      SubnetId: !Ref PrivateSubnet3  # Data
+base Route Tables
+  DatabaseRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-database-rt'
+        - Key: Type
+          Value: Database
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref DatabaseRouteTable
+      SubnetId: !Ref DatabaseSubnet1
+
+  DatabaseSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref DatabaseRouteTable
+      SubnetId: !Ref DatabaseSubnet2
+
+  DatabaseSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Properties:
+      RouteTableId: !Ref DatabaseRouteTable
+      SubnetId: !Ref DatabaseSubnet3
+
+  # Management Route Tables (Enterprise only)
+  ManagementRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-management-rt'
+        - Key: Type
+          Value: Management
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ManagementSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      RouteTableId: !Ref ManagementRouteTable
+      SubnetId: !Ref ManagementSubnet1
+
+  ManagementSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      RouteTableId: !Ref ManagementRouteTable
+      SubnetId: !Ref ManagementSubnet2
+
+  ManagementSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: !Condition IsEnterprisePattern
+    Properties:
+      RouteTableId: !Ref ManagementRouteTable
+      SubnetId: !Ref ManagementSubnet3
+
+  # VPC Flow Logs (Well-Architected Security requirement)
+  VPCFlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: flowlogsDeliveryRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-vpc-flow-log-role'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  VPCFlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vpc/flowlogs/${ProjectName}-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-vpc-flow-logs'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref VPCFlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt VPCFlowLogRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-vpc-flow-log'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-VPC-ID'
+
+  VPCCidr:
+    Description: VPC CIDR Block
+    Value: !Ref VpcCidr
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-VPC-CIDR'
+
+  PublicSubnet1Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicSubnet1-ID'
+
+  PublicSubnet2Id:
+    Description: Public Subnet 2 ID
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicSubnet2-ID'
+
+  PublicSubnet3Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Public Subnet 3 ID
+    Value: !Ref PublicSubnet3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicSubnet3-ID'
+
+  PrivateSubnet1Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateSubnet1-ID'
+
+  PrivateSubnet2Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateSubnet2-ID'
+
+  PrivateSubnet3Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Private Subnet 3 ID
+    Value: !Ref PrivateSubnet3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateSubnet3-ID'
+
+  DatabaseSubnet1Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Database Subnet 1 ID
+    Value: !Ref DatabaseSubnet1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DatabaseSubnet1-ID'
+
+  DatabaseSubnet2Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Database Subnet 2 ID
+    Value: !Ref DatabaseSubnet2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DatabaseSubnet2-ID'
+
+  DatabaseSubnet3Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Database Subnet 3 ID
+    Value: !Ref DatabaseSubnet3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DatabaseSubnet3-ID'
+
+  ManagementSubnet1Id:
+    Condition: !Condition IsEnterprisePattern
+    Description: Management Subnet 1 ID
+    Value: !Ref ManagementSubnet1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ManagementSubnet1-ID'
+
+  ManagementSubnet2Id:
+    Condition: !Condition IsEnterprisePattern
+    Description: Management Subnet 2 ID
+    Value: !Ref ManagementSubnet2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ManagementSubnet2-ID'
+
+  ManagementSubnet3Id:
+    Condition: !Condition IsEnterprisePattern
+    Description: Management Subnet 3 ID
+    Value: !Ref ManagementSubnet3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ManagementSubnet3-ID'
+
+  PublicSubnets:
+    Description: List of Public Subnet IDs
+    Value: !If
+      - IsBasicPattern
+      - !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+      - !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3]]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicSubnets'
+
+  PrivateSubnets:
+    Description: List of Private Subnet IDs
+    Value: !If
+      - IsBasicPattern
+      - !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+      - !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3]]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateSubnets'
+
+  DatabaseSubnets:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: List of Database Subnet IDs
+    Value: !Join [',', [!Ref DatabaseSubnet1, !Ref DatabaseSubnet2, !Ref DatabaseSubnet3]]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DatabaseSubnets'
+
+  InternetGatewayId:
+    Description: Internet Gateway ID
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-IGW-ID'
+
+  NatGateway1Id:
+    Condition: CreateNatGateway
+    Description: NAT Gateway 1 ID
+    Value: !Ref NatGateway1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-NatGateway1-ID'
+
+  NatGateway2Id:
+    Condition: CreateMultipleNat
+    Description: NAT Gateway 2 ID
+    Value: !Ref NatGateway2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-NatGateway2-ID'
+
+  NatGateway3Id:
+    Condition: !And
+      - !Condition CreateMultipleNat
+      - !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: NAT Gateway 3 ID
+    Value: !Ref NatGateway3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-NatGateway3-ID'
+  # Cross-Stack Integration Outputs
+  VPCDefaultSecurityGroupId:
+    Description: VPC Default Security Group ID
+    Value: !GetAtt VPC.DefaultSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-VPC-DefaultSG-ID'
+
+  VPCDefaultNetworkAclId:
+    Description: VPC Default Network ACL ID
+    Value: !GetAtt VPC.DefaultNetworkAcl
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-VPC-DefaultACL-ID'
+
+  AvailabilityZones:
+    Description: List of Availability Zones used
+    Value: !If
+      - IsBasicPattern
+      - !Join [',', [!Select [0, !GetAZs ''], !Select [1, !GetAZs '']]]
+      - !Join [',', [!Select [0, !GetAZs ''], !Select [1, !GetAZs ''], !Select [2, !GetAZs '']]]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-AvailabilityZones'
+
+  PublicRouteTableId:
+    Description: Public Route Table ID
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicRouteTable-ID'
+
+  PrivateRouteTable1Id:
+    Description: Private Route Table 1 ID
+    Value: !Ref PrivateRouteTable1
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateRouteTable1-ID'
+
+  PrivateRouteTable2Id:
+    Description: Private Route Table 2 ID
+    Value: !Ref PrivateRouteTable2
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateRouteTable2-ID'
+
+  PrivateRouteTable3Id:
+    Condition: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+    Description: Private Route Table 3 ID
+    Value: !Ref PrivateRouteTable3
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateRouteTable3-ID'

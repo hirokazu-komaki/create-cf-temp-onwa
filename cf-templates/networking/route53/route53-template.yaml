@@ -1,0 +1,417 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠Route53テンプレート - DNS管理、ヘルスチェック、フェイルオーバー対応'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS06-BP01]
+    Security: [SEC05-BP01, SEC05-BP02]
+    Reliability: [REL08-BP01, REL08-BP02, REL11-BP01, REL11-BP02]
+    PerformanceEfficiency: [PERF02-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST07-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なDNS設定 - パブリックホストゾーンのみ"
+      Features: ["PublicHostedZone", "BasicRecords"]
+    Advanced:
+      Description: "高度なDNS設定 - ヘルスチェック、フェイルオーバー対応"
+      Features: ["PublicHostedZone", "PrivateHostedZone", "HealthChecks", "Failover"]
+    Enterprise:
+      Description: "エンタープライズDNS設定 - 完全な冗長化とモニタリング"
+      Features: ["PublicHostedZone", "PrivateHostedZone", "HealthChecks", "Failover", "Monitoring", "Logging"]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名（リソース名のプレフィックスとして使用）
+    Default: MyProject
+    
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    
+  DomainName:
+    Type: String
+    Description: 管理するドメイン名
+    Default: example.com
+    AllowedPattern: ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$
+    
+  ConfigurationPattern:
+    Type: String
+    Description: DNS設定パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+    
+  CreatePrivateHostedZone:
+    Type: String
+    Description: プライベートホストゾーンの作成
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    
+  VPCId:
+    Type: String
+    Description: プライベートホストゾーンに関連付けるVPC ID（プライベートゾーン作成時に必要）
+    Default: ''
+    
+  EnableHealthChecks:
+    Type: String
+    Description: ヘルスチェックの有効化
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    
+  PrimaryEndpoint:
+    Type: String
+    Description: プライマリエンドポイントのIPアドレスまたはドメイン名
+    Default: ''
+    
+  SecondaryEndpoint:
+    Type: String
+    Description: セカンダリエンドポイントのIPアドレスまたはドメイン名（フェイルオーバー用）
+    Default: ''
+    
+  HealthCheckPath:
+    Type: String
+    Description: ヘルスチェック用のパス
+    Default: /health
+    
+  EnableQueryLogging:
+    Type: String
+    Description: クエリログの有効化
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  CreatePrivateZone: !Equals [!Ref CreatePrivateHostedZone, 'true']
+  HasVPCId: !Not [!Equals [!Ref VPCId, '']]
+  CreateHealthChecks: !Equals [!Ref EnableHealthChecks, 'true']
+  HasPrimaryEndpoint: !Not [!Equals [!Ref PrimaryEndpoint, '']]
+  HasSecondaryEndpoint: !Not [!Equals [!Ref SecondaryEndpoint, '']]
+  CreateFailover: !And
+    - !Condition CreateHealthChecks
+    - !Condition HasPrimaryEndpoint
+    - !Condition HasSecondaryEndpoint
+  IsAdvancedPattern: !Equals [!Ref ConfigurationPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref ConfigurationPattern, 'Enterprise']
+  EnableAdvancedFeatures: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+  EnableQueryLogs: !Equals [!Ref EnableQueryLogging, 'true']
+
+Resources:
+  # Public Hosted Zone
+  PublicHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: !Sub 'Public hosted zone for ${ProjectName}-${Environment}'
+      HostedZoneTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-zone'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Type
+          Value: Public
+        - Key: WellArchitected
+          Value: 'true'
+
+  # Private Hosted Zone
+  PrivateHostedZone:
+    Type: AWS::Route53::HostedZone
+    Condition: !And [!Condition CreatePrivateZone, !Condition HasVPCId]
+    Properties:
+      Name: !Sub 'internal.${DomainName}'
+      VPCs:
+        - VPCId: !Ref VPCId
+          VPCRegion: !Ref AWS::Region
+      HostedZoneConfig:
+        Comment: !Sub 'Private hosted zone for ${ProjectName}-${Environment}'
+      HostedZoneTags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-zone'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Type
+          Value: Private
+        - Key: WellArchitected
+          Value: 'true'
+
+  # Health Checks
+  PrimaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasPrimaryEndpoint]
+    Properties:
+      Type: !If
+        - !Equals [!Select [0, !Split ['.', !Ref PrimaryEndpoint]], !Ref PrimaryEndpoint]
+        - HTTP
+        - HTTP
+      ResourcePath: !Ref HealthCheckPath
+      FullyQualifiedDomainName: !If
+        - !Equals [!Select [0, !Split ['.', !Ref PrimaryEndpoint]], !Ref PrimaryEndpoint]
+        - !Ref AWS::NoValue
+        - !Ref PrimaryEndpoint
+      IPAddress: !If
+        - !Equals [!Select [0, !Split ['.', !Ref PrimaryEndpoint]], !Ref PrimaryEndpoint]
+        - !Ref PrimaryEndpoint
+        - !Ref AWS::NoValue
+      Port: 80
+      RequestInterval: 30
+      FailureThreshold: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-primary-health-check'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Type
+          Value: Primary
+
+  SecondaryHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasSecondaryEndpoint]
+    Properties:
+      Type: !If
+        - !Equals [!Select [0, !Split ['.', !Ref SecondaryEndpoint]], !Ref SecondaryEndpoint]
+        - HTTP
+        - HTTP
+      ResourcePath: !Ref HealthCheckPath
+      FullyQualifiedDomainName: !If
+        - !Equals [!Select [0, !Split ['.', !Ref SecondaryEndpoint]], !Ref SecondaryEndpoint]
+        - !Ref AWS::NoValue
+        - !Ref SecondaryEndpoint
+      IPAddress: !If
+        - !Equals [!Select [0, !Split ['.', !Ref SecondaryEndpoint]], !Ref SecondaryEndpoint]
+        - !Ref SecondaryEndpoint
+        - !Ref AWS::NoValue
+      Port: 80
+      RequestInterval: 30
+      FailureThreshold: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-secondary-health-check'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Type
+          Value: Secondary
+
+  # DNS Records with Failover
+  PrimaryARecord:
+    Type: AWS::Route53::RecordSet
+    Condition: !And [!Condition CreateFailover, !Condition HasPrimaryEndpoint]
+    Properties:
+      HostedZoneId: !Ref PublicHostedZone
+      Name: !Ref DomainName
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref PrimaryEndpoint
+      SetIdentifier: Primary
+      Failover: PRIMARY
+      HealthCheckId: !Ref PrimaryHealthCheck
+
+  SecondaryARecord:
+    Type: AWS::Route53::RecordSet
+    Condition: !And [!Condition CreateFailover, !Condition HasSecondaryEndpoint]
+    Properties:
+      HostedZoneId: !Ref PublicHostedZone
+      Name: !Ref DomainName
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref SecondaryEndpoint
+      SetIdentifier: Secondary
+      Failover: SECONDARY
+      HealthCheckId: !Ref SecondaryHealthCheck
+
+  # Basic A Record (when not using failover)
+  BasicARecord:
+    Type: AWS::Route53::RecordSet
+    Condition: !And [!Not [!Condition CreateFailover], !Condition HasPrimaryEndpoint]
+    Properties:
+      HostedZoneId: !Ref PublicHostedZone
+      Name: !Ref DomainName
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !Ref PrimaryEndpoint
+
+  # WWW CNAME Record
+  WWWRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref PublicHostedZone
+      Name: !Sub 'www.${DomainName}'
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Ref DomainName
+
+  # Query Logging (Enterprise pattern)
+  QueryLoggingConfig:
+    Type: AWS::Route53::QueryLoggingConfig
+    Condition: !And [!Condition IsEnterprisePattern, !Condition EnableQueryLogs]
+    Properties:
+      HostedZoneId: !Ref PublicHostedZone
+      CloudWatchLogsLogGroupArn: !GetAtt QueryLogGroup.Arn
+
+  QueryLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: !And [!Condition IsEnterprisePattern, !Condition EnableQueryLogs]
+    Properties:
+      LogGroupName: !Sub '/aws/route53/${ProjectName}-${Environment}'
+      RetentionInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-route53-query-logs'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Alarms for Health Checks
+  PrimaryHealthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasPrimaryEndpoint, !Condition EnableAdvancedFeatures]
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-primary-endpoint-health'
+      AlarmDescription: 'Primary endpoint health check alarm'
+      MetricName: HealthCheckStatus
+      Namespace: AWS/Route53
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref PrimaryHealthCheck
+      AlarmActions:
+        - !Ref HealthCheckTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-primary-health-alarm'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  SecondaryHealthCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasSecondaryEndpoint, !Condition EnableAdvancedFeatures]
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-secondary-endpoint-health'
+      AlarmDescription: 'Secondary endpoint health check alarm'
+      MetricName: HealthCheckStatus
+      Namespace: AWS/Route53
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref SecondaryHealthCheck
+      AlarmActions:
+        - !Ref HealthCheckTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-secondary-health-alarm'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topic for Health Check Notifications
+  HealthCheckTopic:
+    Type: AWS::SNS::Topic
+    Condition: !Condition EnableAdvancedFeatures
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-route53-health-alerts'
+      DisplayName: 'Route53 Health Check Alerts'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-health-check-topic'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentOutpu
+ts:
+  PublicHostedZoneId:
+    Description: Public Hosted Zone ID
+    Value: !Ref PublicHostedZone
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicHostedZone-ID'
+
+  PublicHostedZoneName:
+    Description: Public Hosted Zone Name
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicHostedZone-Name'
+
+  PublicNameServers:
+    Description: Public Hosted Zone Name Servers
+    Value: !Join [',', !GetAtt PublicHostedZone.NameServers]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicHostedZone-NameServers'
+
+  PrivateHostedZoneId:
+    Condition: !And [!Condition CreatePrivateZone, !Condition HasVPCId]
+    Description: Private Hosted Zone ID
+    Value: !Ref PrivateHostedZone
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateHostedZone-ID'
+
+  PrivateHostedZoneName:
+    Condition: !And [!Condition CreatePrivateZone, !Condition HasVPCId]
+    Description: Private Hosted Zone Name
+    Value: !Sub 'internal.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrivateHostedZone-Name'
+
+  PrimaryHealthCheckId:
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasPrimaryEndpoint]
+    Description: Primary Health Check ID
+    Value: !Ref PrimaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PrimaryHealthCheck-ID'
+
+  SecondaryHealthCheckId:
+    Condition: !And [!Condition CreateHealthChecks, !Condition HasSecondaryEndpoint]
+    Description: Secondary Health Check ID
+    Value: !Ref SecondaryHealthCheck
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-SecondaryHealthCheck-ID'
+
+  HealthCheckTopicArn:
+    Condition: !Condition EnableAdvancedFeatures
+    Description: SNS Topic ARN for Health Check Notifications
+    Value: !Ref HealthCheckTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-HealthCheckTopic-ARN'
+
+  QueryLogGroupName:
+    Condition: !And [!Condition IsEnterprisePattern, !Condition EnableQueryLogs]
+    Description: CloudWatch Log Group for Route53 Query Logs
+    Value: !Ref QueryLogGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-Route53QueryLogGroup-Name'
+
+  DomainName:
+    Description: Configured Domain Name
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DomainName'
+
+  WWWDomainName:
+    Description: WWW Domain Name
+    Value: !Sub 'www.${DomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-WWWDomainName'

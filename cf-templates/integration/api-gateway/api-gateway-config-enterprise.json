@@ -1,0 +1,42 @@
+{
+  "Parameters": {
+    "APIPattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "APIName": "enterprise-api",
+    "APIType": "REST",
+    "EndpointType": "REGIONAL",
+    "EnableCaching": "true",
+    "CachingTTL": 600,
+    "CacheKeyParameters": ["method.request.querystring.id", "method.request.header.Authorization"],
+    "EnableLogging": "true",
+    "LogLevel": "ERROR",
+    "EnableXRayTracing": "true",
+    "EnableCORS": "true",
+    "ThrottlingBurstLimit": 2000,
+    "ThrottlingRateLimit": 1000,
+    "EnableAPIKey": "true",
+    "EnableUsagePlan": "true",
+    "UsagePlanQuota": 100000,
+    "UsagePlanBurstLimit": 1000,
+    "UsagePlanRateLimit": 500,
+    "EnableWAF": "true",
+    "WAFWebACLArn": "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/enterprise-api-waf/12345678-1234-1234-1234-123456789012",
+    "EnableCognito": "true",
+    "CognitoUserPoolArn": "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_XXXXXXXXX",
+    "EnableLambdaAuthorizer": "true",
+    "AuthorizerFunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:api-authorizer",
+    "EnableRequestValidator": "true",
+    "EnableModelValidation": "true",
+    "EnableClientCertificate": "true"
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Production",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズAPI Gateway設定 - WAF、認証、高度なセキュリティ"
+}

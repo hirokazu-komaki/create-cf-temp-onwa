@@ -1,0 +1,38 @@
+{
+  "projectConfig": {
+    "projectName": "my-web-app",
+    "environment": "dev",
+    "region": "us-east-1",
+    "availabilityZones": [
+      "us-east-1a",
+      "us-east-1b"
+    ],
+    "tags": {
+      "Project": "MyWebApp",
+      "Environment": "Development",
+      "Owner": "DevTeam",
+      "CostCenter": "Engineering"
+    }
+  },
+  "serviceConfigs": {
+    "vpc": {
+      "pattern": "basic",
+      "cidrBlock": "10.0.0.0/16",
+      "enableDnsHostnames": true,
+      "enableDnsSupport": true
+    },
+    "ec2": {
+      "pattern": "basic",
+      "instanceType": "t3.micro",
+      "keyPairName": "my-key-pair"
+    }
+  },
+  "integrationOptions": {
+    "crossStackReferences": true,
+    "sharedResources": [
+      "vpc",
+      "security-groups"
+    ],
+    "monitoringIntegration": true
+  }
+}

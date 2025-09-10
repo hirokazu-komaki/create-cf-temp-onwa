@@ -1,0 +1,13 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "dev",
+  "LoadBalancerType": "network",
+  "ConfigurationPattern": "NetworkBasic",
+  "VPCId": "vpc-12345678",
+  "SubnetIds": "subnet-12345678,subnet-87654321",
+  "Scheme": "internet-facing",
+  "EnableAccessLogs": "false",
+  "HealthCheckPort": 80,
+  "TargetPort": 80,
+  "EnableCrossZoneLoadBalancing": "false"
+}

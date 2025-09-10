@@ -1,0 +1,26 @@
+{
+  "Parameters": {
+    "MonitoringPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "EnableDashboard": "true",
+    "DashboardName": "MyWebApp-Staging-Dashboard",
+    "EnableAlarms": "true",
+    "AlarmNotificationEmail": "devops-team@company.com",
+    "AlarmNotificationSMS": "+1234567890",
+    "LogRetentionDays": 30,
+    "EnableDetailedMonitoring": "true",
+    "EnableCustomMetrics": "true",
+    "CustomMetricNamespace": "MyWebApp/Staging",
+    "EnableLogInsights": "true",
+    "EnableContainerInsights": "false",
+    "EnableApplicationInsights": "true"
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "OperationalExcellence,Reliability"
+  },
+  "Description": "ステージング環境用の高度なCloudWatch設定 - ダッシュボード、詳細監視、カスタムメトリクス"
+}

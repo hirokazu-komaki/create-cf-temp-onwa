@@ -1,0 +1,37 @@
+{
+  "Parameters": {
+    "MonitoringPattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "EnableDashboard": "true",
+    "DashboardName": "EnterpriseApp-Production-Dashboard",
+    "EnableAlarms": "true",
+    "AlarmNotificationEmail": "sre-team@company.com",
+    "AlarmNotificationSMS": "+1234567890",
+    "AlarmNotificationSlack": "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+    "LogRetentionDays": 365,
+    "EnableDetailedMonitoring": "true",
+    "EnableCustomMetrics": "true",
+    "CustomMetricNamespace": "EnterpriseApp/Production",
+    "EnableLogInsights": "true",
+    "EnableContainerInsights": "true",
+    "EnableApplicationInsights": "true",
+    "EnableXRayTracing": "true",
+    "EnableServiceMap": "true",
+    "EnableAnomalyDetection": "true",
+    "EnableCompositeAlarms": "true",
+    "EnableCrossAccountSharing": "true",
+    "SharedAccountIds": ["123456789012", "987654321098"],
+    "EnableLogEncryption": "true",
+    "LogEncryptionKMSKey": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+  },
+  "Tags": {
+    "Owner": "SRE Team",
+    "CostCenter": "Production",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズCloudWatch設定 - 包括的監視、異常検知、クロスアカウント共有"
+}

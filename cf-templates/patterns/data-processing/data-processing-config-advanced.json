@@ -1,0 +1,94 @@
+{
+  "Parameters": {
+    "PatternType": "DataProcessing",
+    "PatternComplexity": "Advanced",
+    "ProjectName": "MyDataPipeline",
+    "Environment": "staging",
+    "Region": "us-east-1",
+    "AvailabilityZones": ["us-east-1a", "us-east-1b"],
+    
+    "DataIngestionConfig": {
+      "EnableKinesis": true,
+      "KinesisShardCount": 4,
+      "KinesisRetentionPeriod": 168,
+      "EnableKinesisFirehose": true,
+      "FirehoseBufferSize": 5,
+      "FirehoseBufferInterval": 300,
+      "EnableSQS": true,
+      "SQSVisibilityTimeout": 300,
+      "SQSMessageRetentionPeriod": 1209600
+    },
+    
+    "DataStorageConfig": {
+      "EnableS3": true,
+      "S3BucketName": "mydatapipeline-staging-data",
+      "S3StorageClass": "STANDARD_IA",
+      "EnableS3Versioning": true,
+      "EnableS3Encryption": true,
+      "S3LifecycleRules": [
+        {
+          "Id": "ArchiveOldData",
+          "Status": "Enabled",
+          "Transitions": [
+            {
+              "Days": 30,
+              "StorageClass": "GLACIER"
+            },
+            {
+              "Days": 90,
+              "StorageClass": "DEEP_ARCHIVE"
+            }
+          ]
+        }
+      ]
+    },
+    
+    "DataProcessingConfig": {
+      "EnableLambda": true,
+      "LambdaMemorySize": 1024,
+      "LambdaTimeout": 900,
+      "EnableEMR": true,
+      "EMRInstanceType": "m5.xlarge",
+      "EMRInstanceCount": 3,
+      "EMRApplications": ["Spark", "Hadoop", "Hive"],
+      "EnableGlue": true,
+      "GlueWorkerType": "G.1X",
+      "GlueNumberOfWorkers": 10
+    },
+    
+    "DataWarehouseConfig": {
+      "EnableRedshift": true,
+      "RedshiftNodeType": "dc2.large",
+      "RedshiftNumberOfNodes": 2,
+      "RedshiftDatabaseName": "datawarehouse",
+      "EnableRedshiftEncryption": true,
+      "RedshiftBackupRetentionPeriod": 7
+    },
+    
+    "AnalyticsConfig": {
+      "EnableAthena": true,
+      "AthenaWorkgroup": "mydatapipeline-staging",
+      "EnableQuickSight": false,
+      "EnableElasticsearch": true,
+      "ElasticsearchInstanceType": "t3.medium.elasticsearch",
+      "ElasticsearchInstanceCount": 2
+    },
+    
+    "MonitoringConfig": {
+      "EnableCloudWatch": true,
+      "EnableXRayTracing": true,
+      "LogRetentionDays": 30,
+      "EnableDashboard": true,
+      "EnableDataQualityMonitoring": true,
+      "EnableCostMonitoring": true
+    }
+  },
+  "Tags": {
+    "Owner": "Data Engineering Team",
+    "CostCenter": "Analytics",
+    "Environment": "Staging",
+    "Architecture": "DataProcessing",
+    "WellArchitected": "PerformanceEfficiency,CostOptimization,OperationalExcellence"
+  },
+  "Description": "ステージング環境用の高度なデータ処理パターン - Kinesis、EMR、Redshift、Athena統合"
+}

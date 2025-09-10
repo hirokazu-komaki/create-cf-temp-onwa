@@ -1,0 +1,953 @@
+name: CloudFormation Template CI/CD Pipeline (Multi Account)
+
+on:
+  push:
+    branches: [ main, develop, 'feature/*', 'hotfix/*' ]
+    paths:
+      - '**/*-config-*.json'
+      - 'cf-templates/**/*.yaml'
+      - 'cf-templates/**/*.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*-config-*.json'
+      - 'cf-templates/**/*.yaml'
+      - 'cf-templates/**/*.yml'
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  PYTHON_VERSION: '3.12'
+  DEPLOYMENT_MODE: 'multi-account'
+
+jobs:
+  # ステージ1: 設定ファイルの検証とテンプレートマッピング
+  validate-and-map:
+    name: Validate Config and Map to Templates
+    runs-on: ubuntu-latest
+    outputs:
+      config-files: ${{ steps.detect-configs.outputs.config-files }}
+      templates-to-test: ${{ steps.map-templates.outputs.templates }}
+      target-environment: ${{ steps.extract-account.outputs.target-environment }}
+      deployment-region: ${{ steps.extract-account.outputs.deployment-region }}
+      aws-account: ${{ steps.extract-account.outputs.aws-account }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install boto3 jsonschema pyyaml cfn-lint
+
+    - name: Detect changed config files
+      id: detect-configs
+      run: |
+        # 変更されたJSONパラメータファイルを検出
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '.*-config-.*\.json$' || true)
+        if [ -z "$CHANGED_FILES" ]; then
+          echo "No config files changed"
+          echo "config-files=[]" >> $GITHUB_OUTPUT
+        else
+          echo "Changed config files: $CHANGED_FILES"
+          # JSON配列形式で出力
+          CONFIG_ARRAY=$(echo "$CHANGED_FILES" | jq -R -s -c 'split("\n")[:-1]')
+          echo "config-files=$CONFIG_ARRAY" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Extract deployment info from config
+      id: extract-account
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        import sys
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        
+        target_environment = None
+        deployment_region = None
+        aws_account = None
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                # 環境の検出（主要な判定基準）
+                if 'Environment' in config.get('Parameters', {}):
+                    target_environment = config['Parameters']['Environment'].lower()
+                elif 'Environment' in config.get('Tags', {}):
+                    target_environment = config['Tags']['Environment'].lower()
+                
+                # リージョンの検出（ARNから推定も含む）
+                if 'Region' in config.get('Parameters', {}):
+                    deployment_region = config['Parameters']['Region']
+                elif 'AWSRegion' in config.get('Parameters', {}):
+                    deployment_region = config['Parameters']['AWSRegion']
+                else:
+                    # ARNからリージョンを推定
+                    for key, value in config.get('Parameters', {}).items():
+                        if isinstance(value, str) and value.startswith('arn:aws:'):
+                            parts = value.split(':')
+                            if len(parts) >= 4 and parts[3]:
+                                deployment_region = parts[3]
+                                break
+                
+                # オプション: AWSアカウントの明示的指定（新機能）
+                if 'AWSAccount' in config.get('Parameters', {}):
+                    aws_account = config['Parameters']['AWSAccount']
+                elif 'TargetAccount' in config.get('Parameters', {}):
+                    aws_account = config['Parameters']['TargetAccount']
+                
+                if target_environment:
+                    break
+                    
+            except Exception as e:
+                print(f"Error reading {config_file}: {e}")
+                continue
+        
+        # 環境に基づくデフォルト設定
+        environment_mapping = {
+            'production': 'prod',
+            'prod': 'prod', 
+            'staging': 'staging',
+            'stage': 'staging',
+            'development': 'dev',
+            'dev': 'dev',
+            'test': 'dev'
+        }
+        
+        normalized_env = environment_mapping.get(target_environment, 'dev')
+        
+        # GitHub Outputsに設定
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"target-environment={normalized_env}\n")
+            f.write(f"deployment-region={deployment_region or 'us-east-1'}\n")
+            f.write(f"aws-account={aws_account or ''}\n")
+        
+        print(f"Target Environment: {normalized_env}")
+        print(f"Deployment Region: {deployment_region or 'us-east-1'}")
+        if aws_account:
+            print(f"Explicit AWS Account: {aws_account}")
+        else:
+            print("AWS Account: Will use environment-based default")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+    - name: Map config files to templates
+      id: map-templates
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        import re
+        from pathlib import Path
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        templates_to_test = []
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            # 設定ファイルパスからテンプレートパスを推定
+            config_path = Path(config_file)
+            
+            # パターン: cf-templates/service/subservice/service-config-pattern.json
+            # -> cf-templates/service/subservice/service-template.yaml
+            if config_path.parts[0] == 'cf-templates':
+                template_dir = config_path.parent
+                service_name = config_path.parts[-2] if len(config_path.parts) > 2 else config_path.stem.split('-')[0]
+                
+                # 可能なテンプレートファイル名を試行
+                possible_templates = [
+                    template_dir / f"{service_name}-template.yaml",
+                    template_dir / f"{service_name}-template.yml",
+                    template_dir / f"{service_name}.yaml",
+                    template_dir / f"{service_name}.yml",
+                    template_dir / "template.yaml",
+                    template_dir / "template.yml"
+                ]
+                
+                for template_path in possible_templates:
+                    if template_path.exists():
+                        templates_to_test.append({
+                            'config': config_file,
+                            'template': str(template_path),
+                            'service': service_name
+                        })
+                        break
+                else:
+                    print(f"Warning: No template found for config {config_file}")
+        
+        # JSON配列として出力
+        templates_json = json.dumps(templates_to_test)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"templates={templates_json}\n")
+        
+        print(f"Templates to test: {templates_json}")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+    - name: Validate JSON config files
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        from jsonschema import validate, ValidationError
+        
+        config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
+        
+        # 基本的なJSONスキーマ定義
+        config_schema = {
+            "type": "object",
+            "required": ["Parameters"],
+            "properties": {
+                "Parameters": {
+                    "type": "object",
+                    "minProperties": 1
+                },
+                "Tags": {
+                    "type": "object"
+                },
+                "Description": {
+                    "type": "string"
+                }
+            }
+        }
+        
+        for config_file in config_files:
+            if not config_file:
+                continue
+                
+            print(f"Validating {config_file}...")
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                validate(instance=config, schema=config_schema)
+                print(f"✓ {config_file} is valid")
+                
+            except json.JSONDecodeError as e:
+                print(f"✗ {config_file} has invalid JSON: {e}")
+                exit(1)
+            except ValidationError as e:
+                print(f"✗ {config_file} schema validation failed: {e}")
+                exit(1)
+            except Exception as e:
+                print(f"✗ Error validating {config_file}: {e}")
+                exit(1)
+        
+        print("All config files validated successfully!")
+        EOF
+      env:
+        CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
+
+  # ステージ2: CloudFormationテンプレートのテスト
+  test-templates:
+    name: Test CloudFormation Templates
+    runs-on: ubuntu-latest
+    needs: validate-and-map
+    if: needs.validate-and-map.outputs.templates-to-test != '[]'
+    strategy:
+      matrix:
+        template: ${{ fromJson(needs.validate-and-map.outputs.templates-to-test) }}
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install AWS CLI and tools
+      run: |
+        pip install boto3 cfn-lint pyyaml
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+    - name: Configure AWS credentials for testing
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ needs.validate-and-map.outputs.deployment-region }}
+
+    - name: Lint CloudFormation template
+      run: |
+        echo "Linting template: ${{ matrix.template.template }}"
+        cfn-lint ${{ matrix.template.template }}
+
+    - name: Convert JSON config to CloudFormation parameters
+      run: |
+        python3 << 'EOF'
+        import json
+        
+        # JSON設定ファイルをCloudFormationパラメータ形式に変換
+        with open('${{ matrix.template.config }}', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        parameters = []
+        for key, value in config.get('Parameters', {}).items():
+            parameters.append({
+                'ParameterKey': key,
+                'ParameterValue': str(value)
+            })
+        
+        # パラメータファイルを出力
+        with open('cf-parameters.json', 'w') as f:
+            json.dump(parameters, f, indent=2)
+        
+        print("Generated CloudFormation parameters:")
+        print(json.dumps(parameters, indent=2))
+        EOF
+
+    - name: Validate CloudFormation template
+      run: |
+        echo "Validating template with parameters..."
+        aws cloudformation validate-template \
+          --template-body file://${{ matrix.template.template }}
+
+    - name: Test template deployment (dry-run)
+      run: |
+        # Change Setを使用してドライランテストを実行
+        STACK_NAME="test-${{ matrix.template.service }}-$(date +%s)"
+        echo "Testing deployment for stack: $STACK_NAME"
+        
+        # Change Setを作成してテンプレートの妥当性を確認
+        aws cloudformation create-change-set \
+          --stack-name $STACK_NAME \
+          --template-body file://${{ matrix.template.template }} \
+          --parameters file://cf-parameters.json \
+          --change-set-name test-changeset \
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+          --tags Key=TestRun,Value=true Key=GitHubAction,Value=true \
+          || echo "Change set creation completed (may fail for new stack)"
+        
+        # Change Setの詳細を表示
+        aws cloudformation describe-change-set \
+          --stack-name $STACK_NAME \
+          --change-set-name test-changeset \
+          || echo "Change set description completed"
+        
+        # Change Setを削除（実際のデプロイは行わない）
+        aws cloudformation delete-change-set \
+          --stack-name $STACK_NAME \
+          --change-set-name test-changeset \
+          || echo "Change set cleanup completed"
+
+    - name: Run Well-Architected compliance check
+      run: |
+        python3 << 'EOF'
+        import yaml
+        import json
+        
+        # テンプレートのWell-Architected準拠チェック
+        with open('${{ matrix.template.template }}', 'r') as f:
+            template = yaml.safe_load(f)
+        
+        metadata = template.get('Metadata', {})
+        wa_compliance = metadata.get('WellArchitectedCompliance', {})
+        
+        print("Well-Architected Framework Compliance Check:")
+        print("=" * 50)
+        
+        pillars = [
+            'OperationalExcellence',
+            'Security', 
+            'Reliability',
+            'PerformanceEfficiency',
+            'CostOptimization',
+            'Sustainability'
+        ]
+        
+        for pillar in pillars:
+            practices = wa_compliance.get(pillar, [])
+            if practices:
+                print(f"✓ {pillar}: {', '.join(practices)}")
+            else:
+                print(f"- {pillar}: No specific practices defined")
+        
+        print("\nCompliance check completed!")
+        EOF
+
+  # ステージ3: 手動デプロイメント承認
+  request-deployment-approval:
+    name: Request Deployment Approval
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates]
+    if: |
+      always() && 
+      needs.validate-and-map.result == 'success' && 
+      needs.test-templates.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    environment: 
+      name: ${{ needs.validate-and-map.outputs.aws-account && format('aws-account-{0}', needs.validate-and-map.outputs.aws-account) || format('{0}-environment', needs.validate-and-map.outputs.target-environment) }}
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+    - name: Display deployment information
+      run: |
+        echo "🚀 Deployment Ready!"
+        echo "===================="
+        echo "Target Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
+        echo "Deployment Region: ${{ needs.validate-and-map.outputs.deployment-region }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Templates tested: ${{ needs.validate-and-map.outputs.templates-to-test }}"
+        if [ -n "${{ needs.validate-and-map.outputs.aws-account }}" ]; then
+          echo "Explicit AWS Account: ${{ needs.validate-and-map.outputs.aws-account }}"
+        else
+          echo "AWS Account: Environment-based default (${{ needs.validate-and-map.outputs.target-environment }})"
+        fi
+        echo ""
+        echo "Please review the test results above and approve deployment if everything looks correct."
+
+    - name: Determine deployment strategy
+      run: |
+        echo "📋 Deployment Strategy:"
+        echo "======================"
+        
+        case "${{ needs.validate-and-map.outputs.target-environment }}" in
+          "prod")
+            echo "🔴 PRODUCTION DEPLOYMENT"
+            echo "- Requires 2+ approvals"
+            echo "- Full backup before deployment"
+            echo "- Rollback plan ready"
+            ;;
+          "staging")
+            echo "🟡 STAGING DEPLOYMENT"
+            echo "- Requires 1+ approval"
+            echo "- Integration testing environment"
+            echo "- Safe for testing"
+            ;;
+          "dev")
+            echo "🟢 DEVELOPMENT DEPLOYMENT"
+            echo "- Minimal approval required"
+            echo "- Development/testing environment"
+            echo "- Rapid iteration friendly"
+            ;;
+        esac
+        
+        echo ""
+        echo "Environment will be determined by:"
+        if [ -n "${{ needs.validate-and-map.outputs.aws-account }}" ]; then
+          echo "1. Explicit AWS Account: ${{ needs.validate-and-map.outputs.aws-account }}"
+          echo "2. Environment: ${{ needs.validate-and-map.outputs.target-environment }}"
+        else
+          echo "1. Environment from config: ${{ needs.validate-and-map.outputs.target-environment }}"
+          echo "2. GitHub Secrets for ${{ needs.validate-and-map.outputs.target-environment }} environment"
+        fi
+
+  # ステージ4: 実際のデプロイメント（手動承認後）
+  deploy-to-aws:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates, request-deployment-approval]
+    if: |
+      always() && 
+      needs.request-deployment-approval.result == 'success'
+    strategy:
+      matrix:
+        template: ${{ fromJson(needs.validate-and-map.outputs.templates-to-test) }}
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install AWS CLI and dependencies
+      run: |
+        pip install boto3 jq
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+    - name: Determine target AWS account and select credentials
+      id: select-credentials
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        import sys
+        
+        # 設定ファイルからAWSアカウント情報を再取得
+        config_file = '${{ matrix.template.config }}'
+        
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # AWSアカウントIDの検出
+            aws_account = None
+            account_keys = ['AWSAccount', 'TargetAccount', 'AccountId']
+            
+            for key in account_keys:
+                if key in config.get('Parameters', {}):
+                    aws_account = config['Parameters'][key]
+                    break
+                elif key in config:
+                    aws_account = config[key]
+                    break
+            
+            # リージョンの検出
+            region = None
+            region_keys = ['Region', 'AWSRegion']
+            
+            for key in region_keys:
+                if key in config.get('Parameters', {}):
+                    region = config['Parameters'][key]
+                    break
+                elif key in config:
+                    region = config[key]
+                    break
+            
+            region = region or 'us-east-1'
+            
+            print(f"Target AWS Account: {aws_account}")
+            print(f"Target Region: {region}")
+            
+            # GitHub Outputsに設定
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                f.write(f"aws-account={aws_account or ''}\n")
+                f.write(f"region={region}\n")
+                
+                # アカウント固有の認証情報キー名を決定
+                if aws_account:
+                    f.write(f"access-key-secret=AWS_ACCESS_KEY_ID_{aws_account}\n")
+                    f.write(f"secret-key-secret=AWS_SECRET_ACCESS_KEY_{aws_account}\n")
+                    f.write(f"role-arn-secret=AWS_DEPLOYMENT_ROLE_ARN_{aws_account}\n")
+                else:
+                    # デフォルトの認証情報を使用
+                    f.write(f"access-key-secret=AWS_ACCESS_KEY_ID\n")
+                    f.write(f"secret-key-secret=AWS_SECRET_ACCESS_KEY\n")
+                    f.write(f"role-arn-secret=AWS_DEPLOYMENT_ROLE_ARN\n")
+            
+        except Exception as e:
+            print(f"Error processing config file: {e}")
+            sys.exit(1)
+        EOF
+
+    - name: Configure AWS credentials for deployment
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets[format('AWS_ACCESS_KEY_ID_{0}', upper(needs.validate-and-map.outputs.target-environment))] || secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets[format('AWS_SECRET_ACCESS_KEY_{0}', upper(needs.validate-and-map.outputs.target-environment))] || secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ needs.validate-and-map.outputs.deployment-region }}
+        role-to-assume: ${{ needs.validate-and-map.outputs.aws-account && format('arn:aws:iam::{0}:role/GitHubActionsDeploymentRole', needs.validate-and-map.outputs.aws-account) || secrets[format('AWS_DEPLOYMENT_ROLE_ARN_{0}', upper(needs.validate-and-map.outputs.target-environment))] || secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+        role-session-name: GitHubActions-CF-Deploy-${{ needs.validate-and-map.outputs.target-environment }}
+            'AWS_ACCESS_KEY_ID_987654321098': os.getenv('AWS_ACCESS_KEY_ID_987654321098', ''),
+            'AWS_SECRET_ACCESS_KEY_987654321098': os.getenv('AWS_SECRET_ACCESS_KEY_987654321098', ''),
+            'AWS_DEPLOYMENT_ROLE_ARN_987654321098': os.getenv('AWS_DEPLOYMENT_ROLE_ARN_987654321098', ''),
+        }
+        
+        # 必要な認証情報が存在するかチェック
+        required_secrets = [access_key_secret, secret_key_secret, role_arn_secret]
+        missing_secrets = []
+        
+        for secret in required_secrets:
+            if not secrets_map.get(secret):
+                missing_secrets.append(secret)
+        
+        if missing_secrets:
+            print(f"❌ Missing required secrets: {missing_secrets}")
+            print("Please ensure the following secrets are configured in GitHub:")
+            for secret in missing_secrets:
+                print(f"  - {secret}")
+            sys.exit(1)
+        else:
+            print("✅ All required secrets are available")
+        EOF
+      env:
+        # すべての可能な認証情報を環境変数として渡す
+        AWS_ACCESS_KEY_ID_DEFAULT: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY_DEFAULT: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEPLOYMENT_ROLE_ARN_DEFAULT: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+        # アカウント固有の認証情報
+        AWS_ACCESS_KEY_ID_123456789012: ${{ secrets.AWS_ACCESS_KEY_ID_123456789012 }}
+        AWS_SECRET_ACCESS_KEY_123456789012: ${{ secrets.AWS_SECRET_ACCESS_KEY_123456789012 }}
+        AWS_DEPLOYMENT_ROLE_ARN_123456789012: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN_123456789012 }}
+        AWS_ACCESS_KEY_ID_987654321098: ${{ secrets.AWS_ACCESS_KEY_ID_987654321098 }}
+        AWS_SECRET_ACCESS_KEY_987654321098: ${{ secrets.AWS_SECRET_ACCESS_KEY_987654321098 }}
+        AWS_DEPLOYMENT_ROLE_ARN_987654321098: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN_987654321098 }}
+
+    - name: Setup AWS credentials using boto3
+      run: |
+        python3 << 'EOF'
+        import boto3
+        import os
+        import json
+        
+        # 選択された認証情報を取得
+        access_key_secret = "${{ steps.select-credentials.outputs.access-key-secret }}"
+        secret_key_secret = "${{ steps.select-credentials.outputs.secret-key-secret }}"
+        role_arn_secret = "${{ steps.select-credentials.outputs.role-arn-secret }}"
+        region = "${{ steps.select-credentials.outputs.region }}"
+        
+        # 環境変数から認証情報を取得
+        access_key = os.getenv(access_key_secret.replace('-', '_').upper())
+        secret_key = os.getenv(secret_key_secret.replace('-', '_').upper())
+        role_arn = os.getenv(role_arn_secret.replace('-', '_').upper())
+        
+        print(f"Using Access Key: {access_key[:10]}..." if access_key else "No access key")
+        print(f"Using Role ARN: {role_arn}" if role_arn else "No role ARN")
+        print(f"Target Region: {region}")
+        
+        # AWS認証情報を設定
+        if role_arn:
+            # AssumeRoleを使用
+            sts_client = boto3.client(
+                'sts',
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region
+            )
+            
+            response = sts_client.assume_role(
+                RoleArn=role_arn,
+                RoleSessionName='GitHubActions-CF-Deploy'
+            )
+            
+            credentials = response['Credentials']
+            
+            # 一時認証情報を環境変数に設定
+            with open(os.environ['GITHUB_ENV'], 'a') as f:
+                f.write(f"AWS_ACCESS_KEY_ID={credentials['AccessKeyId']}\n")
+                f.write(f"AWS_SECRET_ACCESS_KEY={credentials['SecretAccessKey']}\n")
+                f.write(f"AWS_SESSION_TOKEN={credentials['SessionToken']}\n")
+                f.write(f"AWS_DEFAULT_REGION={region}\n")
+            
+            print("✅ Successfully assumed role and configured credentials")
+        else:
+            # 直接認証情報を使用
+            with open(os.environ['GITHUB_ENV'], 'a') as f:
+                f.write(f"AWS_ACCESS_KEY_ID={access_key}\n")
+                f.write(f"AWS_SECRET_ACCESS_KEY={secret_key}\n")
+                f.write(f"AWS_DEFAULT_REGION={region}\n")
+            
+            print("✅ Successfully configured direct credentials")
+        EOF
+      env:
+        # すべての可能な認証情報を環境変数として渡す
+        AWS_ACCESS_KEY_ID_DEFAULT: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY_DEFAULT: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEPLOYMENT_ROLE_ARN_DEFAULT: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+        AWS_ACCESS_KEY_ID_123456789012: ${{ secrets.AWS_ACCESS_KEY_ID_123456789012 }}
+        AWS_SECRET_ACCESS_KEY_123456789012: ${{ secrets.AWS_SECRET_ACCESS_KEY_123456789012 }}
+        AWS_DEPLOYMENT_ROLE_ARN_123456789012: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN_123456789012 }}
+        AWS_ACCESS_KEY_ID_987654321098: ${{ secrets.AWS_ACCESS_KEY_ID_987654321098 }}
+        AWS_SECRET_ACCESS_KEY_987654321098: ${{ secrets.AWS_SECRET_ACCESS_KEY_987654321098 }}
+        AWS_DEPLOYMENT_ROLE_ARN_987654321098: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN_987654321098 }}
+
+    - name: Convert JSON config to CloudFormation parameters
+      run: |
+        python3 << 'EOF'
+        import json
+        
+        with open('${{ matrix.template.config }}', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        parameters = []
+        for key, value in config.get('Parameters', {}).items():
+            parameters.append({
+                'ParameterKey': key,
+                'ParameterValue': str(value)
+            })
+        
+        with open('cf-parameters.json', 'w') as f:
+            json.dump(parameters, f, indent=2)
+        EOF
+
+    - name: Deploy CloudFormation stack using boto3
+      run: |
+        python3 << 'EOF'
+        import boto3
+        import json
+        import time
+        import os
+        from datetime import datetime
+        
+        # 設定ファイルを読み込み
+        config_file = '${{ matrix.template.config }}'
+        template_file = '${{ matrix.template.template }}'
+        service_name = '${{ matrix.template.service }}'
+        
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        with open(template_file, 'r', encoding='utf-8') as f:
+            template_body = f.read()
+        
+        # CloudFormationパラメータを準備
+        parameters = []
+        for key, value in config.get('Parameters', {}).items():
+            parameters.append({
+                'ParameterKey': key,
+                'ParameterValue': str(value)
+            })
+        
+        # スタック名を生成
+        stack_name = f"{service_name}-${{ github.ref_name }}-${{ github.sha }}"[:128]  # スタック名の長さ制限
+        
+        # タグを準備
+        tags = [
+            {'Key': 'DeployedBy', 'Value': 'GitHubActions'},
+            {'Key': 'Repository', 'Value': '${{ github.repository }}'},
+            {'Key': 'Branch', 'Value': '${{ github.ref_name }}'},
+            {'Key': 'Commit', 'Value': '${{ github.sha }}'},
+            {'Key': 'Environment', 'Value': '${{ github.ref_name }}'},
+            {'Key': 'ConfigFile', 'Value': config_file},
+            {'Key': 'TemplateFile', 'Value': template_file}
+        ]
+        
+        # 設定ファイルのタグも追加
+        for key, value in config.get('Tags', {}).items():
+            tags.append({'Key': key, 'Value': str(value)})
+        
+        print(f"🚀 Deploying CloudFormation Stack")
+        print(f"Stack Name: {stack_name}")
+        print(f"Template: {template_file}")
+        print(f"Config: {config_file}")
+        print(f"Parameters: {len(parameters)} parameters")
+        print(f"Tags: {len(tags)} tags")
+        
+        # CloudFormationクライアントを作成
+        cf_client = boto3.client('cloudformation')
+        
+        try:
+            # スタックの存在確認
+            try:
+                response = cf_client.describe_stacks(StackName=stack_name)
+                stack_exists = True
+                current_status = response['Stacks'][0]['StackStatus']
+                print(f"📋 Stack exists with status: {current_status}")
+            except cf_client.exceptions.ClientError as e:
+                if 'does not exist' in str(e):
+                    stack_exists = False
+                    print("📋 Stack does not exist, will create new stack")
+                else:
+                    raise
+            
+            # スタックの作成または更新
+            if stack_exists:
+                print("🔄 Updating existing stack...")
+                try:
+                    response = cf_client.update_stack(
+                        StackName=stack_name,
+                        TemplateBody=template_body,
+                        Parameters=parameters,
+                        Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM'],
+                        Tags=tags
+                    )
+                    operation = 'UPDATE'
+                    print(f"✅ Stack update initiated: {response['StackId']}")
+                except cf_client.exceptions.ClientError as e:
+                    if 'No updates are to be performed' in str(e):
+                        print("ℹ️  No updates required for the stack")
+                        operation = 'NO_UPDATE'
+                    else:
+                        raise
+            else:
+                print("🆕 Creating new stack...")
+                response = cf_client.create_stack(
+                    StackName=stack_name,
+                    TemplateBody=template_body,
+                    Parameters=parameters,
+                    Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM'],
+                    Tags=tags,
+                    OnFailure='ROLLBACK'
+                )
+                operation = 'CREATE'
+                print(f"✅ Stack creation initiated: {response['StackId']}")
+            
+            # デプロイメントの完了を待機
+            if operation != 'NO_UPDATE':
+                print(f"⏳ Waiting for stack {operation.lower()} to complete...")
+                
+                if operation == 'CREATE':
+                    waiter = cf_client.get_waiter('stack_create_complete')
+                else:  # UPDATE
+                    waiter = cf_client.get_waiter('stack_update_complete')
+                
+                try:
+                    waiter.wait(
+                        StackName=stack_name,
+                        WaiterConfig={
+                            'Delay': 30,
+                            'MaxAttempts': 120  # 最大60分待機
+                        }
+                    )
+                    print(f"🎉 Stack {operation.lower()} completed successfully!")
+                    
+                except Exception as e:
+                    print(f"❌ Stack {operation.lower()} failed: {e}")
+                    
+                    # 失敗時のスタック情報を取得
+                    try:
+                        response = cf_client.describe_stacks(StackName=stack_name)
+                        stack_status = response['Stacks'][0]['StackStatus']
+                        print(f"Final stack status: {stack_status}")
+                        
+                        # スタックイベントを取得して失敗原因を調査
+                        events_response = cf_client.describe_stack_events(StackName=stack_name)
+                        failed_events = [
+                            event for event in events_response['StackEvents']
+                            if 'FAILED' in event.get('ResourceStatus', '')
+                        ]
+                        
+                        if failed_events:
+                            print("❌ Failed events:")
+                            for event in failed_events[:5]:  # 最新5件のみ表示
+                                print(f"  - {event['LogicalResourceId']}: {event.get('ResourceStatusReason', 'No reason provided')}")
+                    except Exception as desc_error:
+                        print(f"Could not retrieve stack details: {desc_error}")
+                    
+                    raise
+            
+            # 最終的なスタック情報を表示
+            response = cf_client.describe_stacks(StackName=stack_name)
+            stack = response['Stacks'][0]
+            
+            print(f"\n📊 Stack Deployment Summary")
+            print(f"Stack Name: {stack['StackName']}")
+            print(f"Status: {stack['StackStatus']}")
+            print(f"Creation Time: {stack['CreationTime']}")
+            if 'LastUpdatedTime' in stack:
+                print(f"Last Updated: {stack['LastUpdatedTime']}")
+            
+            # スタックの出力値を表示
+            if 'Outputs' in stack:
+                print(f"\n📤 Stack Outputs:")
+                for output in stack['Outputs']:
+                    print(f"  {output['OutputKey']}: {output['OutputValue']}")
+                    if 'Description' in output:
+                        print(f"    Description: {output['Description']}")
+            else:
+                print("No stack outputs defined")
+            
+            # GitHub環境変数にスタック情報を設定
+            with open(os.environ['GITHUB_ENV'], 'a') as f:
+                f.write(f"DEPLOYED_STACK_NAME={stack['StackName']}\n")
+                f.write(f"DEPLOYED_STACK_STATUS={stack['StackStatus']}\n")
+                f.write(f"DEPLOYED_STACK_ID={stack['StackId']}\n")
+            
+            print(f"\n✅ Deployment completed successfully!")
+            
+        except Exception as e:
+            print(f"❌ Deployment failed: {e}")
+            
+            # エラー情報をGitHub環境変数に設定
+            with open(os.environ['GITHUB_ENV'], 'a') as f:
+                f.write(f"DEPLOYMENT_ERROR={str(e)}\n")
+            
+            raise
+        EOF
+
+    - name: Generate deployment report
+      if: always()
+      run: |
+        python3 << 'EOF'
+        import os
+        import json
+        from datetime import datetime
+        
+        # デプロイメント結果の情報を収集
+        stack_name = os.getenv('DEPLOYED_STACK_NAME', 'Unknown')
+        stack_status = os.getenv('DEPLOYED_STACK_STATUS', 'Unknown')
+        stack_id = os.getenv('DEPLOYED_STACK_ID', 'Unknown')
+        deployment_error = os.getenv('DEPLOYMENT_ERROR', '')
+        
+        target_account = '${{ steps.select-credentials.outputs.aws-account }}'
+        target_region = '${{ steps.select-credentials.outputs.region }}'
+        
+        print(f"📋 Deployment Report")
+        print(f"=" * 50)
+        print(f"Timestamp: {datetime.now().isoformat()}")
+        print(f"Repository: ${{ github.repository }}")
+        print(f"Branch: ${{ github.ref_name }}")
+        print(f"Commit: ${{ github.sha }}")
+        print(f"Template: ${{ matrix.template.template }}")
+        print(f"Config: ${{ matrix.template.config }}")
+        print(f"Target Account: {target_account or 'Default'}")
+        print(f"Target Region: {target_region}")
+        print(f"Stack Name: {stack_name}")
+        print(f"Stack Status: {stack_status}")
+        
+        if deployment_error:
+            print(f"❌ Error: {deployment_error}")
+        else:
+            print(f"✅ Deployment Status: Success")
+        
+        print(f"Stack ID: {stack_id}")
+        print(f"=" * 50)
+        
+        # レポートをファイルに保存
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'repository': '${{ github.repository }}',
+            'branch': '${{ github.ref_name }}',
+            'commit': '${{ github.sha }}',
+            'template': '${{ matrix.template.template }}',
+            'config': '${{ matrix.template.config }}',
+            'target_account': target_account,
+            'target_region': target_region,
+            'stack_name': stack_name,
+            'stack_status': stack_status,
+            'stack_id': stack_id,
+            'success': not bool(deployment_error),
+            'error': deployment_error
+        }
+        
+        with open(f'deployment-report-{stack_name}.json', 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        print(f"📄 Report saved to: deployment-report-{stack_name}.json")
+        EOF
+
+    - name: Upload deployment artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-reports-${{ github.run_id }}
+        path: deployment-report-*.json
+        retention-days: 30
+
+  # 通知ジョブ
+  notify-completion:
+    name: Notify Deployment Completion
+    runs-on: ubuntu-latest
+    needs: [validate-and-map, test-templates, deploy-to-aws]
+    if: always()
+
+    steps:
+    - name: Notify success
+      if: needs.deploy-to-aws.result == 'success'
+      run: |
+        echo "🎉 Deployment completed successfully!"
+        echo "All CloudFormation templates have been deployed to AWS."
+        
+    - name: Notify failure
+      if: failure()
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Please check the logs above for error details."

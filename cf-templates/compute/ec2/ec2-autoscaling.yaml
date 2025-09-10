@@ -1,0 +1,478 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠 EC2 Auto Scaling テンプレート - コスト最適化とセキュリティを重視'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS05-BP01]
+    Security: [SEC01-BP01, SEC02-BP02, SEC03-BP01, SEC05-BP01]
+    Reliability: [REL01-BP04, REL02-BP01, REL03-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST06-BP01, COST07-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02, SUS05-BP01]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なEC2設定 - 開発環境向け"
+      InstanceTypes: [t3.micro, t3.small]
+      MinSize: 1
+      MaxSize: 2
+    Advanced:
+      Description: "高度なEC2設定 - ステージング環境向け"
+      InstanceTypes: [t3.medium, m5.large]
+      MinSize: 2
+      MaxSize: 4
+    Enterprise:
+      Description: "エンタープライズEC2設定 - 本番環境向け"
+      InstanceTypes: [m5.large, m5.xlarge, c5.large]
+      MinSize: 3
+      MaxSize: 10
+
+Parameters:
+
+  # Cross-Stack Import Parameters
+  ImportVPCId:
+    Type: String
+    Description: Import VPC ID from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+
+  ImportPrivateSubnets:
+    Type: String
+    Description: Import Private Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
+
+  ImportPublicSubnets:
+    Type: String
+    Description: Import Public Subnets from networking-vpc stack (optional)
+    Default: ''
+
+  ImportExecutionRoleArn:
+    Type: String
+    Description: Import Execution Role ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+
+  ImportInstanceProfileArn:
+    Type: String
+    Description: Import Instance Profile ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-instance-profile-arn'
+
+  ImportApplicationKMSKeyArn:
+    Type: String
+    Description: Import Application KMS Key ARN from foundation-kms stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
+
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+    Default: my-project
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ConfigurationPattern:
+    Type: String
+    Description: 設定パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+  
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: サブネットIDリスト（複数AZ推奨）
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2キーペア名
+    Default: ''
+  
+  InstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: AMI ID (SSMパラメータから取得)
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  
+  EnableDetailedMonitoring:
+    Type: String
+    Description: 詳細監視を有効にする
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  EnableSpotInstances:
+    Type: String
+    Description: スポットインスタンスを使用する（コスト最適化）
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  SpotMaxPrice:
+    Type: String
+    Description: スポットインスタンスの最大価格
+    Default: '0.05'
+
+Conditions:
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
+  EnableMonitoring: !Equals [!Ref EnableDetailedMonitoring, 'true']
+  UseSpotInstances: !Equals [!Ref EnableSpotInstances, 'true']
+
+Mappings:
+  InstanceTypePatterns:
+    Basic:
+      PrimaryType: t3.micro
+      SecondaryType: t3.small
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+    Advanced:
+      PrimaryType: t3.medium
+      SecondaryType: m5.large
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+    Enterprise:
+      PrimaryType: m5.large
+      SecondaryType: m5.xlarge
+      MinSize: 3
+      MaxSize: 10
+      DesiredCapacity: 3
+  
+  EnvironmentSettings:
+    dev:
+      InstanceProfile: EC2-Dev-InstanceProfile
+      SecurityGroupSuffix: dev
+      EnableTerminationProtection: 'false'
+    staging:
+      InstanceProfile: EC2-Staging-InstanceProfile
+      SecurityGroupSuffix: staging
+      EnableTerminationProtection: 'false'
+    prod:
+      InstanceProfile: EC2-Prod-InstanceProfile
+      SecurityGroupSuffix: prod
+      EnableTerminationProtection: 'true'
+
+Resources:
+  # IAM Role for EC2 instances
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-EC2-Role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: EC2BasicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeTags
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-EC2-Role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Instance Profile
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-EC2-InstanceProfile'
+      Roles:
+        - !Ref EC2Role
+
+  # Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-EC2-SG'
+      GroupDescription: !Sub 'Security Group for ${ProjectName} EC2 instances in ${Environment}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/8
+          Description: SSH access from VPC
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: HTTP from ALB
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: HTTPS from ALB
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-EC2-SG'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ALB Security Group
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-ALB-SG'
+      GroupDescription: !Sub 'Security Group for ${ProjectName} ALB in ${Environment}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from internet
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ALB-SG'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Launch Template
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-${Environment}-LaunchTemplate'
+      LaunchTemplateData:
+        ImageId: !Ref InstanceAMI
+        InstanceType: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, PrimaryType]
+        KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        Monitoring:
+          Enabled: !If [EnableMonitoring, true, false]
+        InstanceMarketOptions: !If
+          - UseSpotInstances
+          - MarketType: spot
+            SpotOptions:
+              MaxPrice: !Ref SpotMaxPrice
+              SpotInstanceType: one-time
+          - !Ref 'AWS::NoValue'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y amazon-cloudwatch-agent
+            
+            # CloudWatch Agent設定
+            cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOF'
+            {
+              "metrics": {
+                "namespace": "${ProjectName}/${Environment}",
+                "metrics_collected": {
+                  "cpu": {
+                    "measurement": ["cpu_usage_idle", "cpu_usage_iowait", "cpu_usage_user", "cpu_usage_system"],
+                    "metrics_collection_interval": 60
+                  },
+                  "disk": {
+                    "measurement": ["used_percent"],
+                    "metrics_collection_interval": 60,
+                    "resources": ["*"]
+                  },
+                  "mem": {
+                    "measurement": ["mem_used_percent"],
+                    "metrics_collection_interval": 60
+                  }
+                }
+              },
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/messages",
+                        "log_group_name": "/aws/ec2/${ProjectName}/${Environment}/system",
+                        "log_stream_name": "{instance_id}/messages"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            EOF
+            
+            # CloudWatch Agent開始
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config -m ec2 -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-Instance'
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: LaunchedBy
+                Value: AutoScaling
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-Volume'
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectName
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-${Environment}-ASG'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      MinSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MinSize]
+      MaxSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MaxSize]
+      DesiredCapacity: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, DesiredCapacity]
+      VPCZoneIdentifier: !Ref SubnetIds
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      DefaultCooldown: 300
+      TerminationPolicies:
+        - OldestInstance
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ASG'
+          PropagateAtLaunch: false
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        WaitOnResourceSignals: false
+
+  # CloudWatch Log Group
+  EC2LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ec2/${ProjectName}/${Environment}/system'
+      RetentionInDays: !If [IsProduction, 90, 30]
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Auto Scaling Group名
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ASG-Name'
+  
+  AutoScalingGroupArn:
+    Description: Auto Scaling Group ARN
+    Value: !Sub 'arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ASG-Arn'
+  
+  LaunchTemplateId:
+    Description: Launch Template ID
+    Value: !Ref EC2LaunchTemplate
+    Export:
+      Name: !Sub '${AWS::StackName}-LaunchTemplate-Id'
+  
+  EC2SecurityGroupId:
+    Description: EC2 Security Group ID
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-EC2-SG-Id'
+  
+  ALBSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-SG-Id'
+  
+  IAMRoleArn:
+    Description: EC2 IAM Role ARN
+    Value: !GetAtt EC2Role.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IAM-Role-Arn'
+  
+  InstanceProfileArn:
+    Description: EC2 Instance Profile ARN
+    Value: !GetAtt EC2InstanceProfile.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceProfile-Arn'
+  # Cross-Stack Integration Outputs
+  LaunchTemplateId:
+    Description: Launch Template ID
+    Value: !Ref EC2LaunchTemplate
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LaunchTemplate-Id'
+
+  LaunchTemplateVersion:
+    Description: Launch Template Latest Version
+    Value: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LaunchTemplate-Version'
+
+  IAMRoleArn:
+    Description: EC2 IAM Role ARN
+    Value: !GetAtt EC2Role.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-IAM-Role-Arn'
+
+  InstanceProfileArn:
+    Description: EC2 Instance Profile ARN
+    Value: !GetAtt EC2InstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-InstanceProfile-Arn'
+
+  EC2LogGroupName:
+    Description: EC2 Log Group Name
+    Value: !Ref EC2LogGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2-LogGroup-Name'

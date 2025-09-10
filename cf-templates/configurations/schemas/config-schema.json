@@ -1,0 +1,118 @@
+{
+  "title": "CloudFormation Configuration Schema",
+  "description": "JSON設定ファイルのスキーマ定義",
+  "type": "object",
+  "properties": {
+    "projectConfig": {
+      "type": "object",
+      "description": "プロジェクト全体の設定",
+      "properties": {
+        "projectName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "プロジェクト名"
+        },
+        "environment": {
+          "type": "string",
+          "enum": ["dev", "staging", "prod", "test"],
+          "description": "環境名"
+        },
+        "region": {
+          "type": "string",
+          "description": "AWSリージョン"
+        },
+        "availabilityZones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 6,
+          "description": "使用するアベイラビリティゾーン"
+        },
+        "tags": {
+          "type": "object",
+          "description": "共通タグ"
+        }
+      },
+      "required": ["projectName", "environment", "region"]
+    },
+    "serviceConfigs": {
+      "type": "object",
+      "description": "各サービスの設定",
+      "properties": {
+        "vpc": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "enum": ["basic", "advanced", "enterprise"],
+              "description": "VPC設定パターン"
+            },
+            "cidrBlock": {
+              "type": "string",
+              "description": "VPC CIDRブロック"
+            },
+            "enableDnsHostnames": {
+              "type": "boolean",
+              "description": "DNS ホスト名の有効化"
+            },
+            "enableDnsSupport": {
+              "type": "boolean",
+              "description": "DNS サポートの有効化"
+            }
+          },
+          "required": ["pattern", "cidrBlock"]
+        },
+        "ec2": {
+          "type": "object",
+          "properties": {
+            "instanceType": {
+              "type": "string",
+              "description": "EC2インスタンスタイプ"
+            },
+            "amiId": {
+              "type": "string",
+              "description": "AMI ID"
+            },
+            "keyPairName": {
+              "type": "string",
+              "description": "キーペア名"
+            },
+            "securityGroups": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "セキュリティグループID"
+            }
+          },
+          "required": ["instanceType"]
+        }
+      }
+    },
+    "integrationOptions": {
+      "type": "object",
+      "description": "統合オプション",
+      "properties": {
+        "crossStackReferences": {
+          "type": "boolean",
+          "description": "クロススタック参照の有効化"
+        },
+        "sharedResources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "共有リソース名"
+        },
+        "monitoringIntegration": {
+          "type": "boolean",
+          "description": "監視統合の有効化"
+        }
+      }
+    }
+  },
+  "required": ["projectConfig"]
+}

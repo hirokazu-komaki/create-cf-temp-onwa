@@ -1,0 +1,115 @@
+{
+  "Parameters": {
+    "PatternType": "WebApplication",
+    "PatternComplexity": "Enterprise",
+    "ProjectName": "EnterpriseWebApp",
+    "Environment": "prod",
+    "Region": "us-east-1",
+    "AvailabilityZones": ["us-east-1a", "us-east-1b", "us-east-1c"],
+    
+    "VPCConfig": {
+      "CidrBlock": "10.0.0.0/16",
+      "SubnetPattern": "Enterprise",
+      "EnableNatGateway": true,
+      "SingleNatGateway": false,
+      "EnableVPCFlowLogs": true,
+      "EnableDNSHostnames": true,
+      "EnableDNSSupport": true
+    },
+    
+    "LoadBalancerConfig": {
+      "Type": "ApplicationLoadBalancer",
+      "Scheme": "internet-facing",
+      "EnableSSL": true,
+      "CertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+      "EnableWAF": true,
+      "WAFWebACLArn": "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/enterprise-waf/12345678-1234-1234-1234-123456789012",
+      "EnableAccessLogs": true,
+      "AccessLogsBucket": "enterprise-alb-logs-bucket"
+    },
+    
+    "ComputeConfig": {
+      "InstanceType": "m5.large",
+      "MinSize": 3,
+      "MaxSize": 12,
+      "DesiredCapacity": 3,
+      "EnableAutoScaling": true,
+      "EnableMixedInstancesPolicy": true,
+      "InstanceTypes": ["m5.large", "m5.xlarge", "m4.large"],
+      "EnableSpotInstances": false,
+      "EnableDetailedMonitoring": true
+    },
+    
+    "DatabaseConfig": {
+      "Engine": "mysql",
+      "EngineVersion": "8.0.35",
+      "InstanceClass": "db.r5.xlarge",
+      "AllocatedStorage": 500,
+      "EnableMultiAZ": true,
+      "EnableBackup": true,
+      "BackupRetentionPeriod": 30,
+      "EnableEncryption": true,
+      "KMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012",
+      "EnablePerformanceInsights": true,
+      "EnableCloudWatchLogsExport": true
+    },
+    
+    "CacheConfig": {
+      "Engine": "redis",
+      "EngineVersion": "7.0",
+      "NodeType": "cache.r6g.large",
+      "NumCacheNodes": 3,
+      "EnableClusterMode": true,
+      "EnableEncryption": true,
+      "EnableBackup": true,
+      "SnapshotRetentionLimit": 7
+    },
+    
+    "CDNConfig": {
+      "EnableCloudFront": true,
+      "PriceClass": "PriceClass_All",
+      "EnableLogging": true,
+      "LoggingBucket": "enterprise-cloudfront-logs",
+      "EnableWAF": true,
+      "CacheBehaviors": [
+        {
+          "PathPattern": "/api/*",
+          "TTL": 0
+        },
+        {
+          "PathPattern": "/static/*",
+          "TTL": 86400
+        }
+      ]
+    },
+    
+    "MonitoringConfig": {
+      "EnableCloudWatch": true,
+      "EnableXRayTracing": true,
+      "LogRetentionDays": 365,
+      "EnableDashboard": true,
+      "EnableAnomalyDetection": true,
+      "EnableApplicationInsights": true,
+      "EnableContainerInsights": false
+    },
+    
+    "SecurityConfig": {
+      "EnableGuardDuty": true,
+      "EnableSecurityHub": true,
+      "EnableConfig": true,
+      "EnableCloudTrail": true,
+      "EnableVPCFlowLogs": true,
+      "EnableKMSEncryption": true
+    }
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Production",
+    "Environment": "Production",
+    "Architecture": "WebApplication",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズWebアプリケーションパターン - 完全なセキュリティ、高可用性、包括的監視"
+}

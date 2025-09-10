@@ -1,0 +1,27 @@
+{
+  "Parameters": {
+    "ConfigPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "EnableConfigRecorder": "true",
+    "EnableDeliveryChannel": "true",
+    "S3BucketName": "mywebapp-config-bucket-staging",
+    "IncludeGlobalResourceTypes": "true",
+    "EnableAllSupportedResourceTypes": "true",
+    "EnableConfigRules": "true",
+    "ConfigRules": [
+      "required-tags",
+      "encrypted-volumes",
+      "s3-bucket-public-access-prohibited"
+    ],
+    "EnableRemediationConfiguration": "true",
+    "SNSTopicArn": "arn:aws:sns:us-east-1:123456789012:config-notifications"
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "OperationalExcellence,Security"
+  },
+  "Description": "ステージング環境用の高度なAWS Config設定 - コンプライアンスルール、自動修復"
+}

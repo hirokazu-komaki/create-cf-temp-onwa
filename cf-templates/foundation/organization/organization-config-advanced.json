@@ -1,0 +1,20 @@
+{
+  "Parameters": {
+    "OrganizationPattern": "Advanced",
+    "MasterAccountName": "MyOrg-Master",
+    "EnableAllFeatures": "true",
+    "EnableSCP": "true",
+    "CreateOUs": "true",
+    "OUNames": ["Production", "Staging", "Development", "Security"],
+    "EnableCloudTrail": "true",
+    "EnableConfig": "true",
+    "EnableGuardDuty": "true"
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Infrastructure",
+    "Environment": "Multi-Account",
+    "WellArchitected": "OperationalExcellence,Security"
+  },
+  "Description": "高度なAWS Organizations設定 - OU構造、SCP、セキュリティサービス統合"
+}

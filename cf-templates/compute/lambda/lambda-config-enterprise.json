@@ -1,0 +1,46 @@
+{
+  "Parameters": {
+    "FunctionPattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "FunctionName": "enterprise-function",
+    "Runtime": "python3.9",
+    "Handler": "lambda_function.lambda_handler",
+    "MemorySize": 1024,
+    "Timeout": 900,
+    "EnableVPC": "true",
+    "VpcId": "vpc-enterprise123",
+    "SubnetIds": ["subnet-prod1", "subnet-prod2"],
+    "SecurityGroupIds": ["sg-lambda-prod"],
+    "EnableXRayTracing": "true",
+    "EnableDeadLetterQueue": "true",
+    "DeadLetterQueueArn": "arn:aws:sqs:us-east-1:123456789012:enterprise-dlq",
+    "ReservedConcurrency": 100,
+    "ProvisionedConcurrency": 10,
+    "EnableEnvironmentVariables": "true",
+    "EnvironmentVariables": {
+      "LOG_LEVEL": "WARN",
+      "DATABASE_URL": "postgresql://prod-db:5432/enterprise",
+      "ENCRYPTION_KEY_ID": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+    },
+    "EnableKMSEncryption": "true",
+    "KMSKeyArn": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012",
+    "EnableCodeSigning": "true",
+    "CodeSigningConfigArn": "arn:aws:lambda:us-east-1:123456789012:code-signing-config:csc-12345678",
+    "EnableLayerVersions": "true",
+    "LayerVersionArns": [
+      "arn:aws:lambda:us-east-1:123456789012:layer:enterprise-common:1",
+      "arn:aws:lambda:us-east-1:123456789012:layer:monitoring:2"
+    ]
+  },
+  "Tags": {
+    "Owner": "Platform Team",
+    "CostCenter": "Production",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential",
+    "BackupRequired": "true"
+  },
+  "Description": "本番環境用のエンタープライズLambda設定 - 最高レベルのセキュリティ、パフォーマンス、監視"
+}

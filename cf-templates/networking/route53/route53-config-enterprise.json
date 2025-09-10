@@ -1,0 +1,13 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "prod",
+  "DomainName": "example.com",
+  "ConfigurationPattern": "Enterprise",
+  "CreatePrivateHostedZone": "true",
+  "VPCId": "vpc-87654321",
+  "EnableHealthChecks": "true",
+  "PrimaryEndpoint": "primary.example.com",
+  "SecondaryEndpoint": "secondary.example.com",
+  "HealthCheckPath": "/health",
+  "EnableQueryLogging": "true"
+}

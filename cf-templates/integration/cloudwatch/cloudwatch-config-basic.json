@@ -1,0 +1,20 @@
+{
+  "Parameters": {
+    "MonitoringPattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "EnableDashboard": "false",
+    "EnableAlarms": "true",
+    "AlarmNotificationEmail": "dev-team@company.com",
+    "LogRetentionDays": 7,
+    "EnableDetailedMonitoring": "false",
+    "EnableCustomMetrics": "false"
+  },
+  "Tags": {
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "OperationalExcellence"
+  },
+  "Description": "開発環境用の基本的なCloudWatch設定 - 基本アラーム、短期ログ保持"
+}

@@ -1,0 +1,736 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠データ処理統合パターン - Kinesis + Lambda + S3 + Glue + Athena'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS05-BP01, OPS07-BP01]
+    Security: [SEC01-BP01, SEC02-BP01, SEC05-BP01, SEC08-BP01]
+    Reliability: [REL01-BP04, REL02-BP01, REL03-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST06-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02]
+  
+  IntegrationPattern:
+    Name: DataProcessing
+    Description: "リアルタイムデータ処理とバッチ分析構成"
+    Components: ["Kinesis", "Lambda", "S3", "Glue", "Athena", "QuickSight"]
+    Dependencies: ["networking-vpc", "foundation-iam", "foundation-kms"]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+    Default: MyDataPipeline
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ProcessingPattern:
+    Type: String
+    Description: データ処理パターン
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+  
+  # Cross-Stack Import Parameters
+  ImportVPCId:
+    Type: String
+    Description: Import VPC ID from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-VPC-ID'
+
+  ImportPrivateSubnets:
+    Type: String
+    Description: Import Private Subnets from networking-vpc stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-PrivateSubnets'
+
+  ImportExecutionRoleArn:
+    Type: String
+    Description: Import Execution Role ARN from foundation-iam stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-execution-role-arn'
+
+  ImportApplicationKMSKeyArn:
+    Type: String
+    Description: Import Application KMS Key ARN from foundation-kms stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-application-kms-key-arn'
+
+  ImportDatabaseKMSKeyArn:
+    Type: String
+    Description: Import Database KMS Key ARN from foundation-kms stack
+    Default: ''
+
+  ImportAlertTopicArn:
+    Type: String
+    Description: Import Alert Topic ARN from integration-cloudwatch stack
+    Default: !ImportValue
+      Fn::Sub: '${ProjectName}-${Environment}-alert-topic-arn'
+
+  # Data Processing Parameters
+  KinesisShardCount:
+    Type: Number
+    Description: Kinesis Data Stream シャード数
+    Default: 2
+    MinValue: 1
+    MaxValue: 100
+  
+  KinesisRetentionHours:
+    Type: Number
+    Description: Kinesis データ保持時間（時間）
+    Default: 24
+    MinValue: 24
+    MaxValue: 8760
+  
+  LambdaMemorySize:
+    Type: Number
+    Description: Lambda Memory Size (MB)
+    Default: 512
+    MinValue: 128
+    MaxValue: 3008
+  
+  LambdaTimeout:
+    Type: Number
+    Description: Lambda Timeout (seconds)
+    Default: 300
+    MinValue: 1
+    MaxValue: 900
+  
+  EnableDataLake:
+    Type: String
+    Description: Data Lake機能を有効にする
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  
+  EnableRealTimeAnalytics:
+    Type: String
+    Description: リアルタイム分析を有効にする
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  IsAdvancedPattern: !Equals [!Ref ProcessingPattern, Advanced]
+  IsEnterprisePattern: !Equals [!Ref ProcessingPattern, Enterprise]
+  EnableDataLakeCondition: !Equals [!Ref EnableDataLake, 'true']
+  EnableRealTimeAnalyticsCondition: !Equals [!Ref EnableRealTimeAnalytics, 'true']
+  HasDatabaseKMSKey: !Not [!Equals [!Ref ImportDatabaseKMSKeyArn, '']]
+
+Mappings:
+  ProcessingSettings:
+    Basic:
+      BatchSize: 100
+      ParallelizationFactor: 1
+      MaximumBatchingWindowInSeconds: 5
+      StartingPosition: LATEST
+    Advanced:
+      BatchSize: 500
+      ParallelizationFactor: 2
+      MaximumBatchingWindowInSeconds: 10
+      StartingPosition: TRIM_HORIZON
+    Enterprise:
+      BatchSize: 1000
+      ParallelizationFactor: 10
+      MaximumBatchingWindowInSeconds: 30
+      StartingPosition: TRIM_HORIZON
+
+Resources:
+  # Data Processing IAM Role
+  DataProcessingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-data-processing-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+                - glue.amazonaws.com
+                - kinesis.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: DataProcessingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListStreams
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource:
+                  - !GetAtt DataStream.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${RawDataBucket}/*'
+                  - !GetAtt RawDataBucket.Arn
+                  - !Sub '${ProcessedDataBucket}/*'
+                  - !GetAtt ProcessedDataBucket.Arn
+                  - !If
+                    - EnableDataLakeCondition
+                    - !Sub '${DataLakeBucket}/*'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - EnableDataLakeCondition
+                    - !GetAtt DataLakeBucket.Arn
+                    - !Ref AWS::NoValue
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetPartitions
+                  - glue:CreatePartition
+                  - glue:UpdatePartition
+                  - glue:BatchCreatePartition
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !Ref ImportApplicationKMSKeyArn
+                  - !If
+                    - HasDatabaseKMSKey
+                    - !Ref ImportDatabaseKMSKeyArn
+                    - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-data-processing-role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Kinesis Data Stream
+  DataStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-data-stream'
+      ShardCount: !Ref KinesisShardCount
+      RetentionPeriodHours: !Ref KinesisRetentionHours
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: !Ref ImportApplicationKMSKeyArn
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-data-stream'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # S3 Buckets
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-raw-data-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ImportApplicationKMSKeyArn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+              - TransitionInDays: 365
+                StorageClass: DEEP_ARCHIVE
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt DataProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: raw/
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-raw-data'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  ProcessedDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-processed-data-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref ImportApplicationKMSKeyArn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-processed-data'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DataLakeBucket:
+    Type: AWS::S3::Bucket
+    Condition: EnableDataLakeCondition
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-data-lake-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !If
+                - HasDatabaseKMSKey
+                - !Ref ImportDatabaseKMSKeyArn
+                - !Ref ImportApplicationKMSKeyArn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-data-lake'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Lambda Security Group
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-lambda-sg'
+      GroupDescription: Security Group for Lambda functions
+      VpcId: !Ref ImportVPCId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Stream Processor Lambda Function
+  StreamProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-stream-processor'
+      Runtime: python3.9
+      Handler: index.handler
+      Role: !GetAtt DataProcessingRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Environment:
+        Variables:
+          RAW_DATA_BUCKET: !Ref RawDataBucket
+          PROCESSED_DATA_BUCKET: !Ref ProcessedDataBucket
+          DATA_LAKE_BUCKET: !If [EnableDataLakeCondition, !Ref DataLakeBucket, '']
+          KMS_KEY_ID: !Ref ImportApplicationKMSKeyArn
+          ENVIRONMENT: !Ref Environment
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Split [',', !Ref ImportPrivateSubnets]
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import base64
+          import os
+          from datetime import datetime
+          import gzip
+          
+          s3 = boto3.client('s3')
+          
+          def handler(event, context):
+              try:
+                  processed_records = []
+                  
+                  for record in event['Records']:
+                      # Decode Kinesis data
+                      payload = base64.b64decode(record['kinesis']['data'])
+                      data = json.loads(payload)
+                      
+                      # Process the data
+                      processed_data = process_record(data)
+                      processed_records.append(processed_data)
+                  
+                  # Batch write to S3
+                  if processed_records:
+                      write_to_s3(processed_records)
+                  
+                  return {'statusCode': 200, 'processedRecords': len(processed_records)}
+              except Exception as e:
+                  print(f"Error processing stream: {str(e)}")
+                  raise
+          
+          def process_record(data):
+              # Add processing timestamp
+              data['processed_at'] = datetime.utcnow().isoformat()
+              
+              # Add some basic transformations
+              if 'timestamp' in data:
+                  data['date'] = data['timestamp'][:10]  # Extract date
+                  data['hour'] = data['timestamp'][11:13]  # Extract hour
+              
+              return data
+          
+          def write_to_s3(records):
+              # Create partitioned path based on current date
+              now = datetime.utcnow()
+              partition_path = f"year={now.year}/month={now.month:02d}/day={now.day:02d}/hour={now.hour:02d}"
+              
+              # Prepare data for S3
+              data_str = '\n'.join([json.dumps(record) for record in records])
+              compressed_data = gzip.compress(data_str.encode('utf-8'))
+              
+              # Write to processed data bucket
+              key = f"processed/{partition_path}/batch_{now.strftime('%Y%m%d_%H%M%S')}.json.gz"
+              s3.put_object(
+                  Bucket=os.environ['PROCESSED_DATA_BUCKET'],
+                  Key=key,
+                  Body=compressed_data,
+                  ContentType='application/gzip',
+                  ContentEncoding='gzip'
+              )
+              
+              print(f"Wrote {len(records)} records to s3://{os.environ['PROCESSED_DATA_BUCKET']}/{key}")
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-stream-processor'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Data Processor Lambda Function (for S3 events)
+  DataProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-data-processor'
+      Runtime: python3.9
+      Handler: index.handler
+      Role: !GetAtt DataProcessingRole.Arn
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Environment:
+        Variables:
+          PROCESSED_DATA_BUCKET: !Ref ProcessedDataBucket
+          DATA_LAKE_BUCKET: !If [EnableDataLakeCondition, !Ref DataLakeBucket, '']
+          GLUE_DATABASE: !Ref GlueDatabase
+          GLUE_TABLE: !Ref GlueTable
+          KMS_KEY_ID: !Ref ImportApplicationKMSKeyArn
+          ENVIRONMENT: !Ref Environment
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Split [',', !Ref ImportPrivateSubnets]
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import urllib.parse
+          import os
+          from datetime import datetime
+          
+          s3 = boto3.client('s3')
+          glue = boto3.client('glue')
+          
+          def handler(event, context):
+              try:
+                  for record in event['Records']:
+                      bucket = record['s3']['bucket']['name']
+                      key = urllib.parse.unquote_plus(record['s3']['object']['key'])
+                      
+                      print(f"Processing file: s3://{bucket}/{key}")
+                      
+                      # Process the file
+                      process_file(bucket, key)
+                      
+                      # Update Glue catalog if data lake is enabled
+                      if os.environ.get('DATA_LAKE_BUCKET'):
+                          update_glue_catalog(key)
+                  
+                  return {'statusCode': 200}
+              except Exception as e:
+                  print(f"Error processing file: {str(e)}")
+                  raise
+          
+          def process_file(bucket, key):
+              # Download and process the file
+              response = s3.get_object(Bucket=bucket, Key=key)
+              
+              # For this example, we'll just copy to data lake if enabled
+              if os.environ.get('DATA_LAKE_BUCKET'):
+                  # Copy to data lake with better organization
+                  data_lake_key = f"curated/{key}"
+                  s3.copy_object(
+                      CopySource={'Bucket': bucket, 'Key': key},
+                      Bucket=os.environ['DATA_LAKE_BUCKET'],
+                      Key=data_lake_key
+                  )
+                  print(f"Copied to data lake: s3://{os.environ['DATA_LAKE_BUCKET']}/{data_lake_key}")
+          
+          def update_glue_catalog(key):
+              # Extract partition information from key
+              parts = key.split('/')
+              if len(parts) >= 4 and 'year=' in key:
+                  try:
+                      # Add partition to Glue table
+                      partition_values = []
+                      for part in parts:
+                          if '=' in part:
+                              partition_values.append(part.split('=')[1])
+                      
+                      if len(partition_values) >= 4:  # year, month, day, hour
+                          glue.create_partition(
+                              DatabaseName=os.environ['GLUE_DATABASE'],
+                              TableName=os.environ['GLUE_TABLE'],
+                              PartitionInput={
+                                  'Values': partition_values[:4],
+                                  'StorageDescriptor': {
+                                      'Location': f"s3://{os.environ['DATA_LAKE_BUCKET']}/curated/{'/'.join(parts[:-1])}/",
+                                      'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
+                                      'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
+                                      'SerdeInfo': {
+                                          'SerializationLibrary': 'org.openx.data.jsonserde.JsonSerDe'
+                                      }
+                                  }
+                              }
+                          )
+                          print(f"Added partition to Glue catalog: {partition_values}")
+                  except glue.exceptions.AlreadyExistsException:
+                      print("Partition already exists")
+                  except Exception as e:
+                      print(f"Error updating Glue catalog: {str(e)}")
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-data-processor'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Lambda Permissions
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DataProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt RawDataBucket.Arn
+
+  # Kinesis Event Source Mapping
+  KinesisEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DataStream.Arn
+      FunctionName: !Ref StreamProcessorFunction
+      BatchSize: !FindInMap [ProcessingSettings, !Ref ProcessingPattern, BatchSize]
+      ParallelizationFactor: !FindInMap [ProcessingSettings, !Ref ProcessingPattern, ParallelizationFactor]
+      MaximumBatchingWindowInSeconds: !FindInMap [ProcessingSettings, !Ref ProcessingPattern, MaximumBatchingWindowInSeconds]
+      StartingPosition: !FindInMap [ProcessingSettings, !Ref ProcessingPattern, StartingPosition]
+
+  # Glue Database
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Condition: EnableDataLakeCondition
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub '${ProjectName}_${Environment}_database'
+        Description: !Sub 'Data lake database for ${ProjectName} ${Environment}'
+
+  # Glue Table
+  GlueTable:
+    Type: AWS::Glue::Table
+    Condition: EnableDataLakeCondition
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: !Sub '${ProjectName}_${Environment}_processed_data'
+        Description: 'Processed data table'
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          - Name: hour
+            Type: string
+        StorageDescriptor:
+          Location: !Sub 's3://${DataLakeBucket}/curated/processed/'
+          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
+          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+          SerdeInfo:
+            SerializationLibrary: 'org.openx.data.jsonserde.JsonSerDe'
+          Columns:
+            - Name: timestamp
+              Type: string
+            - Name: processed_at
+              Type: string
+            - Name: date
+              Type: string
+            - Name: hour
+              Type: string
+
+  # Kinesis Analytics Application (for real-time analytics)
+  KinesisAnalyticsApplication:
+    Type: AWS::KinesisAnalytics::Application
+    Condition: EnableRealTimeAnalyticsCondition
+    Properties:
+      ApplicationName: !Sub '${ProjectName}-${Environment}-analytics'
+      ApplicationDescription: 'Real-time analytics application'
+      Inputs:
+        - NamePrefix: 'SOURCE_SQL_STREAM'
+          KinesisStreamsInput:
+            ResourceARN: !GetAtt DataStream.Arn
+            RoleARN: !GetAtt DataProcessingRole.Arn
+          InputSchema:
+            RecordColumns:
+              - Name: timestamp
+                SqlType: VARCHAR(32)
+                Mapping: $.timestamp
+              - Name: data
+                SqlType: VARCHAR(1024)
+                Mapping: $.data
+            RecordFormat:
+              RecordFormatType: JSON
+              MappingParameters:
+                JSONMappingParameters:
+                  RecordRowPath: $
+
+  # CloudWatch Alarms
+  StreamProcessorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-stream-processor-errors'
+      AlarmDescription: Stream processor Lambda function errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref StreamProcessorFunction
+
+  KinesisIncomingRecordsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-kinesis-low-throughput'
+      AlarmDescription: Low incoming records to Kinesis stream
+      MetricName: IncomingRecords
+      Namespace: AWS/Kinesis
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 10
+      ComparisonOperator: LessThanThreshold
+      AlarmActions:
+        - !Ref ImportAlertTopicArn
+      Dimensions:
+        - Name: StreamName
+          Value: !Ref DataStream
+
+Outputs:
+  DataStreamName:
+    Description: Kinesis Data Stream Name
+    Value: !Ref DataStream
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-DataStream-Name'
+
+  DataStreamArn:
+    Description: Kinesis Data Stream ARN
+    Value: !GetAtt DataStream.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-DataStream-Arn'
+
+  RawDataBucketName:
+    Description: Raw Data S3 Bucket Name
+    Value: !Ref RawDataBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-RawDataBucket'
+
+  ProcessedDataBucketName:
+    Description: Processed Data S3 Bucket Name
+    Value: !Ref ProcessedDataBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-ProcessedDataBucket'
+
+  DataLakeBucketName:
+    Description: Data Lake S3 Bucket Name
+    Value: !If [EnableDataLakeCondition, !Ref DataLakeBucket, 'N/A']
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-DataLakeBucket'
+
+  GlueDatabaseName:
+    Description: Glue Database Name
+    Value: !If [EnableDataLakeCondition, !Ref GlueDatabase, 'N/A']
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-GlueDatabase'
+
+  StreamProcessorFunctionArn:
+    Description: Stream Processor Lambda Function ARN
+    Value: !GetAtt StreamProcessorFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-StreamProcessor-Arn'
+
+  DataProcessorFunctionArn:
+    Description: Data Processor Lambda Function ARN
+    Value: !GetAtt DataProcessorFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-DataProcessor-Arn'
+
+  KinesisAnalyticsApplicationName:
+    Description: Kinesis Analytics Application Name
+    Value: !If [EnableRealTimeAnalyticsCondition, !Ref KinesisAnalyticsApplication, 'N/A']
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-DataProcessing-AnalyticsApp'

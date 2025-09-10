@@ -1,0 +1,42 @@
+{
+  "Parameters": {
+    "ConfigPattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "EnableConfigRecorder": "true",
+    "EnableDeliveryChannel": "true",
+    "S3BucketName": "enterprise-config-bucket-prod",
+    "IncludeGlobalResourceTypes": "true",
+    "EnableAllSupportedResourceTypes": "true",
+    "EnableConfigRules": "true",
+    "ConfigRules": [
+      "required-tags",
+      "encrypted-volumes",
+      "s3-bucket-public-access-prohibited",
+      "iam-password-policy",
+      "cloudtrail-enabled",
+      "mfa-enabled-for-iam-console-access",
+      "root-access-key-check",
+      "s3-bucket-ssl-requests-only",
+      "vpc-sg-open-only-to-authorized-ports"
+    ],
+    "EnableRemediationConfiguration": "true",
+    "EnableConformancePacks": "true",
+    "ConformancePacks": [
+      "Operational-Best-Practices-for-AWS-Well-Architected-Framework-Security-Pillar",
+      "Operational-Best-Practices-for-PCI-DSS"
+    ],
+    "SNSTopicArn": "arn:aws:sns:us-east-1:123456789012:enterprise-config-notifications",
+    "EnableMultiAccountMultiRegion": "true",
+    "AggregatorAccountId": "123456789012"
+  },
+  "Tags": {
+    "Owner": "Compliance Team",
+    "CostCenter": "Security",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズAWS Config設定 - 完全なコンプライアンス監視、マルチアカウント対応"
+}

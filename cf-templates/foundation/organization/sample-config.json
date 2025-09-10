@@ -1,0 +1,21 @@
+{
+  "Parameters": {
+    "OrganizationPattern": "Enterprise",
+    "OrganizationName": "MyCompany",
+    "EnableAllFeatures": "true",
+    "EnableCloudTrail": "true",
+    "EnableConfig": "true",
+    "EnableGuardDuty": "true",
+    "EnableSecurityHub": "true",
+    "DenyRootUserActions": "true",
+    "RestrictRegions": "true",
+    "AllowedRegions": ["us-east-1", "us-west-2", "ap-northeast-1", "eu-west-1"]
+  },
+  "Tags": {
+    "Owner": "Security Team",
+    "CostCenter": "IT Operations",
+    "Compliance": "SOC2,ISO27001",
+    "WellArchitected": "Security,OperationalExcellence"
+  },
+  "Description": "エンタープライズ組織設定 - 包括的なガバナンスとセキュリティ統制"
+}

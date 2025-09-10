@@ -1,0 +1,18 @@
+{
+  "Parameters": {
+    "KeyUsagePattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "EnableKeyRotation": "false",
+    "KeySpec": "SYMMETRIC_DEFAULT",
+    "KeyUsage": "ENCRYPT_DECRYPT",
+    "DeletionWindowInDays": 30
+  },
+  "Tags": {
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "Security"
+  },
+  "Description": "開発環境用の基本的なKMS設定 - シンプルな暗号化キー"
+}

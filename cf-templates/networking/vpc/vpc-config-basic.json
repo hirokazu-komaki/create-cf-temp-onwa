@@ -1,0 +1,10 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "dev",
+  "VpcCidr": "10.0.0.0/16",
+  "SubnetPattern": "Basic",
+  "EnableDnsHostnames": "true",
+  "EnableDnsSupport": "true",
+  "EnableNatGateway": "true",
+  "SingleNatGateway": "true"
+}

@@ -1,0 +1,10 @@
+{
+  "ProjectName": "MyMicroservices",
+  "Environment": "dev",
+  "ServicePattern": "Basic",
+  "LambdaRuntime": "python3.9",
+  "LambdaMemorySize": 256,
+  "LambdaTimeout": 30,
+  "DynamoDBBillingMode": "PAY_PER_REQUEST",
+  "EnableXRayTracing": "true"
+}

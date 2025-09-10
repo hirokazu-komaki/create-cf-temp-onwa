@@ -1,0 +1,22 @@
+{
+  "Parameters": {
+    "ProjectName": "my-web-app",
+    "Environment": "dev",
+    "ApiType": "BOTH",
+    "ConfigurationPattern": "Advanced",
+    "AuthenticationType": "COGNITO_USER_POOLS",
+    "CognitoUserPoolId": "us-east-1_XXXXXXXXX",
+    "LambdaAuthorizerFunctionArn": "",
+    "EnableCaching": "true",
+    "CachingTtlInSeconds": 300,
+    "ThrottleBurstLimit": 2000,
+    "ThrottleRateLimit": 1000,
+    "EnableXRayTracing": "true",
+    "LogLevel": "INFO"
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Application": "Web Application API"
+  }
+}

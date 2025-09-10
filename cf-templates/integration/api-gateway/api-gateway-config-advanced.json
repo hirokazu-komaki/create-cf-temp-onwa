@@ -1,0 +1,31 @@
+{
+  "Parameters": {
+    "APIPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "APIName": "my-advanced-api",
+    "APIType": "REST",
+    "EndpointType": "REGIONAL",
+    "EnableCaching": "true",
+    "CachingTTL": 300,
+    "CacheKeyParameters": ["method.request.querystring.id"],
+    "EnableLogging": "true",
+    "LogLevel": "INFO",
+    "EnableXRayTracing": "true",
+    "EnableCORS": "true",
+    "ThrottlingBurstLimit": 500,
+    "ThrottlingRateLimit": 250,
+    "EnableAPIKey": "true",
+    "EnableUsagePlan": "true",
+    "UsagePlanQuota": 10000,
+    "UsagePlanBurstLimit": 200,
+    "UsagePlanRateLimit": 100
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "PerformanceEfficiency,OperationalExcellence"
+  },
+  "Description": "ステージング環境用の高度なAPI Gateway設定 - キャッシング、ログ記録、使用量プラン"
+}

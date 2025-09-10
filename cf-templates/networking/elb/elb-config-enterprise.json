@@ -1,0 +1,16 @@
+{
+  "ProjectName": "MyWebApp",
+  "Environment": "prod",
+  "LoadBalancerType": "application",
+  "ConfigurationPattern": "Enterprise",
+  "VPCId": "vpc-87654321",
+  "SubnetIds": "subnet-12345678,subnet-87654321,subnet-11223344",
+  "Scheme": "internet-facing",
+  "EnableAccessLogs": "true",
+  "AccessLogsBucket": "my-webapp-prod-access-logs",
+  "SSLCertificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/87654321-4321-4321-4321-210987654321",
+  "HealthCheckPath": "/health",
+  "HealthCheckPort": 80,
+  "TargetPort": 80,
+  "EnableWAF": "true"
+}

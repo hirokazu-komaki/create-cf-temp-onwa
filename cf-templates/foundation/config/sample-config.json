@@ -1,0 +1,21 @@
+{
+  "Parameters": {
+    "ConfigPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "prod",
+    "EnableAllSupportedResourceTypes": "true",
+    "EnableGlobalResourceTypes": "true",
+    "DeliveryChannelName": "default",
+    "ConfigSnapshotDeliveryProperties": "TwentyFour_Hours",
+    "EnableConfigRules": "true",
+    "EnableRemediationActions": "false",
+    "NotificationEmail": "security-team@company.com"
+  },
+  "Tags": {
+    "Owner": "Security Team",
+    "CostCenter": "IT Operations",
+    "Compliance": "SOC2,PCI-DSS",
+    "WellArchitected": "Security,OperationalExcellence"
+  },
+  "Description": "本番環境用の高度なConfig設定 - 包括的なコンプライアンス監視とアラート"
+}

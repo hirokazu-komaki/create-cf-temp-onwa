@@ -1,0 +1,174 @@
+{
+  "projectConfig": {
+    "projectName": "my-serverless-app",
+    "environment": "dev",
+    "region": "ap-northeast-1",
+    "tags": {
+      "Owner": "Development Team",
+      "CostCenter": "Engineering",
+      "Application": "ServerlessAPI"
+    }
+  },
+  "lambdaConfig": {
+    "configurationPattern": "Basic",
+    "functionName": "api-handler",
+    "runtime": "python3.9",
+    "handler": "lambda_function.lambda_handler",
+    "codeS3Bucket": "",
+    "codeS3Key": "",
+    "enableVPC": "false",
+    "vpcId": "",
+    "subnetIds": [],
+    "enableXRayTracing": "true",
+    "logRetentionDays": 30,
+    "deadLetterQueueArn": ""
+  },
+  "layerConfig": {
+    "layerName": "common-utilities",
+    "layerDescription": "Common utilities and dependencies for serverless functions",
+    "compatibleRuntimes": ["python3.9", "python3.10", "python3.11"],
+    "layerS3Bucket": "",
+    "layerS3Key": "",
+    "licenseInfo": "MIT"
+  },
+  "patterns": {
+    "Basic": {
+      "description": "軽量処理向けの基本設定",
+      "memorySize": 128,
+      "timeout": 30,
+      "reservedConcurrency": 10,
+      "provisionedConcurrency": 0,
+      "useCase": "API Gateway統合、軽量データ処理"
+    },
+    "Advanced": {
+      "description": "中程度の処理向けの高度設定",
+      "memorySize": 512,
+      "timeout": 300,
+      "reservedConcurrency": 50,
+      "provisionedConcurrency": 5,
+      "useCase": "データ変換、外部API呼び出し"
+    },
+    "Enterprise": {
+      "description": "高負荷処理向けのエンタープライズ設定",
+      "memorySize": 1024,
+      "timeout": 900,
+      "reservedConcurrency": 100,
+      "provisionedConcurrency": 10,
+      "useCase": "バッチ処理、機械学習推論"
+    }
+  },
+  "environmentVariables": {
+    "dev": {
+      "LOG_LEVEL": "DEBUG",
+      "API_TIMEOUT": "30",
+      "CACHE_TTL": "300"
+    },
+    "staging": {
+      "LOG_LEVEL": "INFO",
+      "API_TIMEOUT": "60",
+      "CACHE_TTL": "600"
+    },
+    "prod": {
+      "LOG_LEVEL": "INFO",
+      "API_TIMEOUT": "30",
+      "CACHE_TTL": "3600"
+    }
+  },
+  "vpcConfiguration": {
+    "enabled": false,
+    "description": "VPC内でLambdaを実行する場合の設定",
+    "requirements": [
+      "VPC ID",
+      "プライベートサブネット（複数AZ推奨）",
+      "NAT Gateway（外部API呼び出し時）",
+      "セキュリティグループ設定"
+    ],
+    "considerations": [
+      "コールドスタート時間の増加",
+      "ENI作成による初期化遅延",
+      "NAT Gatewayのコスト"
+    ]
+  },
+  "monitoringConfig": {
+    "xrayTracing": {
+      "enabled": true,
+      "description": "分散トレーシングによるパフォーマンス分析"
+    },
+    "cloudwatchLogs": {
+      "retentionDays": 30,
+      "description": "ログの保持期間設定"
+    },
+    "alarms": [
+      {
+        "name": "ErrorRate",
+        "threshold": 5,
+        "description": "エラー発生数のアラーム"
+      },
+      {
+        "name": "Duration",
+        "threshold": "timeout値の80%",
+        "description": "実行時間のアラーム"
+      },
+      {
+        "name": "Throttles",
+        "threshold": 1,
+        "description": "スロットリング発生のアラーム"
+      }
+    ]
+  },
+  "costOptimization": {
+    "strategies": [
+      {
+        "name": "適切なメモリサイズ",
+        "description": "CPU性能とコストのバランス最適化"
+      },
+      {
+        "name": "Provisioned Concurrency",
+        "description": "予測可能な負荷に対するコールドスタート削減"
+      },
+      {
+        "name": "Reserved Concurrency",
+        "description": "同時実行数制限によるコスト制御"
+      },
+      {
+        "name": "ログ保持期間",
+        "description": "環境に応じた適切な保持期間設定"
+      }
+    ]
+  },
+  "wellArchitectedCompliance": {
+    "operationalExcellence": [
+      "OPS04-BP01: 運用手順の自動化",
+      "OPS04-BP02: Infrastructure as Code",
+      "OPS05-BP01: 包括的な監視",
+      "OPS06-BP01: 運用メトリクスの収集"
+    ],
+    "security": [
+      "SEC01-BP01: IAMロールによる最小権限アクセス",
+      "SEC02-BP02: 多層防御（VPC使用時）",
+      "SEC05-BP01: CloudWatchログによるログ記録",
+      "SEC09-BP01: X-Rayによるトレーシング"
+    ],
+    "reliability": [
+      "REL02-BP01: 自動復旧機能",
+      "REL03-BP01: ヘルスチェックとアラーム",
+      "REL04-BP01: デッドレターキュー",
+      "REL11-BP01: 同時実行制御"
+    ],
+    "performanceEfficiency": [
+      "PERF01-BP01: 適切なメモリサイズ選択",
+      "PERF03-BP01: 監視とアラート",
+      "PERF04-BP01: Provisioned Concurrency"
+    ],
+    "costOptimization": [
+      "COST01-BP01: 使用量ベースの課金",
+      "COST02-BP01: 適切なリソースサイジング",
+      "COST07-BP01: リソース使用量監視"
+    ],
+    "sustainability": [
+      "SUS01-BP01: サーバーレスアーキテクチャ",
+      "SUS02-BP01: 効率的なリソース使用",
+      "SUS06-BP01: 最適化されたコード"
+    ]
+  }
+}

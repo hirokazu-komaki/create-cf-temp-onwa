@@ -1,0 +1,27 @@
+{
+  "Parameters": {
+    "KeyUsagePattern": "Enterprise",
+    "ProjectName": "EnterpriseApp",
+    "Environment": "prod",
+    "EnableKeyRotation": "true",
+    "KeySpec": "SYMMETRIC_DEFAULT",
+    "KeyUsage": "ENCRYPT_DECRYPT",
+    "DeletionWindowInDays": 30,
+    "EnableMultiRegion": "true",
+    "CrossAccountAccess": "true",
+    "TrustedAccountIds": ["123456789012", "987654321098", "456789012345"],
+    "EnableCloudHSM": "false",
+    "EnableCloudTrailLogging": "true",
+    "EnableKeyMaterialImport": "false",
+    "KeyRotationIntervalDays": 365
+  },
+  "Tags": {
+    "Owner": "Security Team",
+    "CostCenter": "Security",
+    "Environment": "Production",
+    "Compliance": "SOC2,ISO27001,PCI-DSS",
+    "WellArchitected": "Security,Reliability,OperationalExcellence",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズKMS設定 - 最高レベルの暗号化、コンプライアンス対応"
+}

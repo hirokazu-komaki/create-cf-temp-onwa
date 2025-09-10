@@ -1,0 +1,399 @@
+{
+  "stack_outputs": {
+    "foundation-iam": [
+      {
+        "name": "BasicExecutionRoleArn",
+        "description": "Basic実行ロールのARN",
+        "value": "!GetAtt BasicExecutionRole.Arn",
+        "export_name": "{ProjectName}-{Environment}-basic-execution-role-arn",
+        "conditions": ["IsBasicPattern"]
+      },
+      {
+        "name": "AdvancedExecutionRoleArn",
+        "description": "Advanced実行ロールのARN",
+        "value": "!GetAtt AdvancedExecutionRole.Arn",
+        "export_name": "{ProjectName}-{Environment}-advanced-execution-role-arn",
+        "conditions": ["IsAdvancedPattern"]
+      },
+      {
+        "name": "EnterpriseExecutionRoleArn",
+        "description": "Enterprise実行ロールのARN",
+        "value": "!GetAtt EnterpriseExecutionRole.Arn",
+        "export_name": "{ProjectName}-{Environment}-enterprise-execution-role-arn",
+        "conditions": ["IsEnterprisePattern"]
+      },
+      {
+        "name": "BasicInstanceProfileArn",
+        "description": "BasicインスタンスプロファイルのARN",
+        "value": "!GetAtt BasicInstanceProfile.Arn",
+        "export_name": "{ProjectName}-{Environment}-basic-instance-profile-arn",
+        "conditions": ["IsBasicPattern"]
+      },
+      {
+        "name": "AdvancedInstanceProfileArn",
+        "description": "AdvancedインスタンスプロファイルのARN",
+        "value": "!GetAtt AdvancedInstanceProfile.Arn",
+        "export_name": "{ProjectName}-{Environment}-advanced-instance-profile-arn",
+        "conditions": ["IsAdvancedPattern"]
+      },
+      {
+        "name": "EnterpriseInstanceProfileArn",
+        "description": "EnterpriseインスタンスプロファイルのARN",
+        "value": "!GetAtt EnterpriseInstanceProfile.Arn",
+        "export_name": "{ProjectName}-{Environment}-enterprise-instance-profile-arn",
+        "conditions": ["IsEnterprisePattern"]
+      },
+      {
+        "name": "AuditRoleArn",
+        "description": "監査ロールのARN",
+        "value": "!GetAtt AuditRole.Arn",
+        "export_name": "{ProjectName}-{Environment}-audit-role-arn",
+        "conditions": null
+      }
+    ],
+    "foundation-kms": [
+      {
+        "name": "ApplicationKMSKeyId",
+        "description": "アプリケーション用KMSキーID",
+        "value": "!Ref ApplicationKMSKey",
+        "export_name": "{ProjectName}-{Environment}-application-kms-key-id",
+        "conditions": null
+      },
+      {
+        "name": "ApplicationKMSKeyArn",
+        "description": "アプリケーション用KMSキーARN",
+        "value": "!GetAtt ApplicationKMSKey.Arn",
+        "export_name": "{ProjectName}-{Environment}-application-kms-key-arn",
+        "conditions": null
+      },
+      {
+        "name": "DatabaseKMSKeyId",
+        "description": "データベース用KMSキーID",
+        "value": "!Ref DatabaseKMSKey",
+        "export_name": "{ProjectName}-{Environment}-database-kms-key-id",
+        "conditions": ["CreateDatabaseKey"]
+      },
+      {
+        "name": "DatabaseKMSKeyArn",
+        "description": "データベース用KMSキーARN",
+        "value": "!GetAtt DatabaseKMSKey.Arn",
+        "export_name": "{ProjectName}-{Environment}-database-kms-key-arn",
+        "conditions": ["CreateDatabaseKey"]
+      }
+    ],
+    "networking-vpc": [
+      {
+        "name": "VPCId",
+        "description": "VPC ID",
+        "value": "!Ref VPC",
+        "export_name": "{ProjectName}-{Environment}-VPC-ID",
+        "conditions": null
+      },
+      {
+        "name": "VPCCidr",
+        "description": "VPC CIDR Block",
+        "value": "!Ref VpcCidr",
+        "export_name": "{ProjectName}-{Environment}-VPC-CIDR",
+        "conditions": null
+      },
+      {
+        "name": "PublicSubnets",
+        "description": "パブリックサブネットIDのリスト",
+        "value": "!If [IsBasicPattern, !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2]], !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3]]]",
+        "export_name": "{ProjectName}-{Environment}-PublicSubnets",
+        "conditions": null
+      },
+      {
+        "name": "PrivateSubnets",
+        "description": "プライベートサブネットIDのリスト",
+        "value": "!If [IsBasicPattern, !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2]], !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3]]]",
+        "export_name": "{ProjectName}-{Environment}-PrivateSubnets",
+        "conditions": null
+      },
+      {
+        "name": "DatabaseSubnets",
+        "description": "データベースサブネットIDのリスト",
+        "value": "!Join [',', [!Ref DatabaseSubnet1, !Ref DatabaseSubnet2, !Ref DatabaseSubnet3]]",
+        "export_name": "{ProjectName}-{Environment}-DatabaseSubnets",
+        "conditions": ["IsAdvancedPattern", "IsEnterprisePattern"]
+      },
+      {
+        "name": "InternetGatewayId",
+        "description": "Internet Gateway ID",
+        "value": "!Ref InternetGateway",
+        "export_name": "{ProjectName}-{Environment}-IGW-ID",
+        "conditions": null
+      }
+    ],
+    "compute-ec2": [
+      {
+        "name": "AutoScalingGroupName",
+        "description": "Auto Scaling Group名",
+        "value": "!Ref AutoScalingGroup",
+        "export_name": "{ProjectName}-{Environment}-ASG-Name",
+        "conditions": null
+      },
+      {
+        "name": "AutoScalingGroupArn",
+        "description": "Auto Scaling Group ARN",
+        "value": "!Sub 'arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}'",
+        "export_name": "{ProjectName}-{Environment}-ASG-Arn",
+        "conditions": null
+      },
+      {
+        "name": "EC2SecurityGroupId",
+        "description": "EC2 Security Group ID",
+        "value": "!Ref EC2SecurityGroup",
+        "export_name": "{ProjectName}-{Environment}-EC2-SG-Id",
+        "conditions": null
+      },
+      {
+        "name": "ALBSecurityGroupId",
+        "description": "ALB Security Group ID",
+        "value": "!Ref ALBSecurityGroup",
+        "export_name": "{ProjectName}-{Environment}-ALB-SG-Id",
+        "conditions": null
+      }
+    ],
+    "compute-lambda": [
+      {
+        "name": "LambdaFunctionArn",
+        "description": "Lambda Function ARN",
+        "value": "!GetAtt LambdaFunction.Arn",
+        "export_name": "{ProjectName}-{Environment}-Lambda-Function-Arn",
+        "conditions": null
+      },
+      {
+        "name": "LambdaFunctionName",
+        "description": "Lambda Function Name",
+        "value": "!Ref LambdaFunction",
+        "export_name": "{ProjectName}-{Environment}-Lambda-Function-Name",
+        "conditions": null
+      },
+      {
+        "name": "LambdaSecurityGroupId",
+        "description": "Lambda Security Group ID",
+        "value": "!Ref LambdaSecurityGroup",
+        "export_name": "{ProjectName}-{Environment}-Lambda-SG-Id",
+        "conditions": ["EnableVPCConfig"]
+      }
+    ],
+    "networking-elb": [
+      {
+        "name": "ApplicationLoadBalancerArn",
+        "description": "Application Load Balancer ARN",
+        "value": "!Ref ApplicationLoadBalancer",
+        "export_name": "{ProjectName}-{Environment}-ALB-Arn",
+        "conditions": null
+      },
+      {
+        "name": "ApplicationLoadBalancerDNSName",
+        "description": "Application Load Balancer DNS Name",
+        "value": "!GetAtt ApplicationLoadBalancer.DNSName",
+        "export_name": "{ProjectName}-{Environment}-ALB-DNSName",
+        "conditions": null
+      },
+      {
+        "name": "TargetGroupArn",
+        "description": "Target Group ARN",
+        "value": "!Ref TargetGroup",
+        "export_name": "{ProjectName}-{Environment}-TargetGroup-Arn",
+        "conditions": null
+      },
+      {
+        "name": "ListenerArn",
+        "description": "Listener ARN",
+        "value": "!Ref HTTPSListener",
+        "export_name": "{ProjectName}-{Environment}-Listener-Arn",
+        "conditions": ["EnableHTTPS"]
+      }
+    ],
+    "integration-api-gateway": [
+      {
+        "name": "RestApiId",
+        "description": "REST API ID",
+        "value": "!Ref RestApi",
+        "export_name": "{ProjectName}-{Environment}-RestApi-Id",
+        "conditions": null
+      },
+      {
+        "name": "RestApiEndpoint",
+        "description": "REST API Endpoint URL",
+        "value": "!Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'",
+        "export_name": "{ProjectName}-{Environment}-RestApi-Endpoint",
+        "conditions": null
+      },
+      {
+        "name": "ApiGatewayRoleArn",
+        "description": "API Gateway Execution Role ARN",
+        "value": "!GetAtt ApiGatewayRole.Arn",
+        "export_name": "{ProjectName}-{Environment}-ApiGateway-Role-Arn",
+        "conditions": null
+      }
+    ],
+    "integration-cloudwatch": [
+      {
+        "name": "AlertTopicArn",
+        "description": "SNS Topic ARN for alerts",
+        "value": "!Ref AlertTopic",
+        "export_name": "{ProjectName}-{Environment}-alert-topic-arn",
+        "conditions": null
+      },
+      {
+        "name": "ApplicationLogGroupName",
+        "description": "Application Log Group Name",
+        "value": "!Ref ApplicationLogGroup",
+        "export_name": "{ProjectName}-{Environment}-application-log-group",
+        "conditions": null
+      },
+      {
+        "name": "SystemLogGroupName",
+        "description": "System Log Group Name",
+        "value": "!Ref SystemLogGroup",
+        "export_name": "{ProjectName}-{Environment}-system-log-group",
+        "conditions": null
+      }
+    ]
+  },
+  "dependencies": {
+    "compute-ec2": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PrivateSubnets"],
+        "optional_outputs": ["PublicSubnets"]
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["BasicInstanceProfileArn", "AdvancedInstanceProfileArn", "EnterpriseInstanceProfileArn"],
+        "optional_outputs": []
+      }
+    ],
+    "compute-lambda": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PrivateSubnets"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["BasicExecutionRoleArn", "AdvancedExecutionRoleArn", "EnterpriseExecutionRoleArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "foundation-kms",
+        "required_outputs": ["ApplicationKMSKeyArn"],
+        "optional_outputs": []
+      }
+    ],
+    "networking-elb": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PublicSubnets"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "compute-ec2",
+        "required_outputs": ["AutoScalingGroupName", "EC2SecurityGroupId"],
+        "optional_outputs": []
+      }
+    ],
+    "integration-api-gateway": [
+      {
+        "stack_name": "compute-lambda",
+        "required_outputs": ["LambdaFunctionArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["BasicExecutionRoleArn", "AdvancedExecutionRoleArn", "EnterpriseExecutionRoleArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "integration-cloudwatch",
+        "required_outputs": ["ApplicationLogGroupName"],
+        "optional_outputs": []
+      }
+    ],
+    "patterns-web-application": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PublicSubnets", "PrivateSubnets"],
+        "optional_outputs": ["DatabaseSubnets"]
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["BasicExecutionRoleArn", "AdvancedExecutionRoleArn", "EnterpriseExecutionRoleArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "compute-ec2",
+        "required_outputs": ["AutoScalingGroupName", "EC2SecurityGroupId"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "networking-elb",
+        "required_outputs": ["ApplicationLoadBalancerArn", "TargetGroupArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "integration-cloudwatch",
+        "required_outputs": ["AlertTopicArn", "ApplicationLogGroupName"],
+        "optional_outputs": []
+      }
+    ],
+    "patterns-microservices": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PrivateSubnets"],
+        "optional_outputs": ["PublicSubnets"]
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["AdvancedExecutionRoleArn", "EnterpriseExecutionRoleArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "compute-lambda",
+        "required_outputs": ["LambdaFunctionArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "integration-api-gateway",
+        "required_outputs": ["RestApiId", "RestApiEndpoint"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "integration-cloudwatch",
+        "required_outputs": ["AlertTopicArn", "ApplicationLogGroupName"],
+        "optional_outputs": []
+      }
+    ],
+    "patterns-data-processing": [
+      {
+        "stack_name": "networking-vpc",
+        "required_outputs": ["VPCId", "PrivateSubnets"],
+        "optional_outputs": ["DatabaseSubnets"]
+      },
+      {
+        "stack_name": "foundation-iam",
+        "required_outputs": ["AdvancedExecutionRoleArn", "EnterpriseExecutionRoleArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "compute-lambda",
+        "required_outputs": ["LambdaFunctionArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "foundation-kms",
+        "required_outputs": ["ApplicationKMSKeyArn", "DatabaseKMSKeyArn"],
+        "optional_outputs": []
+      },
+      {
+        "stack_name": "integration-cloudwatch",
+        "required_outputs": ["AlertTopicArn", "ApplicationLogGroupName"],
+        "optional_outputs": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "projectConfig": {
+    "projectName": "my-web-app",
+    "environment": "dev",
+    "region": "ap-northeast-1",
+    "availabilityZones": ["ap-northeast-1a", "ap-northeast-1c"],
+    "tags": {
+      "Owner": "DevOps Team",
+      "CostCenter": "Engineering",
+      "Application": "WebApplication"
+    }
+  },
+  "ec2Config": {
+    "configurationPattern": "Basic",
+    "vpcId": "vpc-12345678",
+    "subnetIds": ["subnet-12345678", "subnet-87654321"],
+    "keyPairName": "my-keypair",
+    "instanceAMI": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2",
+    "enableDetailedMonitoring": "false",
+    "enableSpotInstances": "true",
+    "spotMaxPrice": "0.05"
+  },
+  "scalingConfig": {
+    "scaleUpCooldown": 300,
+    "scaleDownCooldown": 300,
+    "cpuTargetValue": 70,
+    "memoryTargetValue": 80
+  },
+  "patterns": {
+    "Basic": {
+      "description": "開発環境向けの基本設定",
+      "instanceTypes": ["t3.micro", "t3.small"],
+      "minSize": 1,
+      "maxSize": 2,
+      "desiredCapacity": 1,
+      "useSpotInstances": true,
+      "detailedMonitoring": false
+    },
+    "Advanced": {
+      "description": "ステージング環境向けの高度設定",
+      "instanceTypes": ["t3.medium", "m5.large"],
+      "minSize": 2,
+      "maxSize": 4,
+      "desiredCapacity": 2,
+      "useSpotInstances": false,
+      "detailedMonitoring": true
+    },
+    "Enterprise": {
+      "description": "本番環境向けのエンタープライズ設定",
+      "instanceTypes": ["m5.large", "m5.xlarge", "c5.large"],
+      "minSize": 3,
+      "maxSize": 10,
+      "desiredCapacity": 3,
+      "useSpotInstances": false,
+      "detailedMonitoring": true,
+      "multiAZ": true,
+      "terminationProtection": true
+    }
+  },
+  "wellArchitectedCompliance": {
+    "operationalExcellence": [
+      "OPS04-BP01: 運用手順の文書化",
+      "OPS04-BP02: 運用手順のテスト",
+      "OPS05-BP01: 運用メトリクスの収集"
+    ],
+    "security": [
+      "SEC01-BP01: 最小権限アクセス",
+      "SEC02-BP02: 多層防御",
+      "SEC03-BP01: セキュリティグループ設定",
+      "SEC05-BP01: ログ記録"
+    ],
+    "reliability": [
+      "REL01-BP04: マルチAZ配置",
+      "REL02-BP01: 自動復旧",
+      "REL03-BP01: ヘルスチェック",
+      "REL08-BP01: オートスケーリング"
+    ],
+    "performanceEfficiency": [
+      "PERF02-BP01: 適切なインスタンスタイプ選択",
+      "PERF03-BP01: 監視とアラート",
+      "PERF04-BP01: 自動スケーリング"
+    ],
+    "costOptimization": [
+      "COST02-BP05: スポットインスタンス活用",
+      "COST05-BP01: 適切なサイジング",
+      "COST06-BP01: スケジュールベースのスケーリング",
+      "COST07-BP01: リソース使用量監視"
+    ],
+    "sustainability": [
+      "SUS02-BP01: 効率的なリソース使用",
+      "SUS04-BP02: 自動シャットダウン",
+      "SUS05-BP01: 最適化されたワークロード"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "Parameters": {
+    "PermissionPattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "EnableCrossAccountAccess": "false",
+    "EnableMFARequirement": "false",
+    "SessionDurationHours": 1
+  },
+  "Tags": {
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "Security"
+  },
+  "Description": "開発環境用の基本的なIAM設定 - 最小権限、シンプルな構成"
+}

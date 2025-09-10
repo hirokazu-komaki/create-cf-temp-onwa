@@ -1,0 +1,32 @@
+{
+  "Parameters": {
+    "FunctionPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "FunctionName": "my-advanced-function",
+    "Runtime": "python3.9",
+    "Handler": "lambda_function.lambda_handler",
+    "MemorySize": 512,
+    "Timeout": 300,
+    "EnableVPC": "true",
+    "VpcId": "vpc-87654321",
+    "SubnetIds": ["subnet-12345678", "subnet-87654321"],
+    "SecurityGroupIds": ["sg-12345678"],
+    "EnableXRayTracing": "true",
+    "EnableDeadLetterQueue": "true",
+    "DeadLetterQueueArn": "arn:aws:sqs:us-east-1:123456789012:my-dlq",
+    "ReservedConcurrency": 10,
+    "EnableEnvironmentVariables": "true",
+    "EnvironmentVariables": {
+      "LOG_LEVEL": "INFO",
+      "DATABASE_URL": "postgresql://localhost:5432/mydb"
+    }
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "Reliability,OperationalExcellence"
+  },
+  "Description": "ステージング環境用の高度なLambda設定 - VPC統合、X-Ray、DLQ"
+}

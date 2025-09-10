@@ -1,0 +1,23 @@
+{
+  "Parameters": {
+    "PermissionPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "EnableCrossAccountAccess": "true",
+    "TrustedAccountIds": ["123456789012"],
+    "EnableMFARequirement": "true",
+    "SessionDurationHours": 2,
+    "EnablePasswordPolicy": "true",
+    "RequireSymbols": "true",
+    "RequireNumbers": "true",
+    "MinPasswordLength": 12
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "Compliance": "ISO27001",
+    "WellArchitected": "Security"
+  },
+  "Description": "ステージング環境用の高度なIAM設定 - MFA必須、パスワードポリシー有効"
+}

@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 Auto Scaling ポリシーとCloudWatchアラーム - コスト最適化とパフォーマンス効率'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: プロジェクト名
+  
+  Environment:
+    Type: String
+    Description: 環境名
+    AllowedValues: [dev, staging, prod]
+  
+  AutoScalingGroupName:
+    Type: String
+    Description: Auto Scaling Group名
+  
+  ScaleUpCooldown:
+    Type: Number
+    Description: スケールアップのクールダウン時間（秒）
+    Default: 300
+    MinValue: 60
+    MaxValue: 3600
+  
+  ScaleDownCooldown:
+    Type: Number
+    Description: スケールダウンのクールダウン時間（秒）
+    Default: 300
+    MinValue: 60
+    MaxValue: 3600
+  
+  CPUTargetValue:
+    Type: Number
+    Description: CPU使用率のターゲット値（%）
+    Default: 70
+    MinValue: 10
+    MaxValue: 90
+  
+  MemoryTargetValue:
+    Type: Number
+    Description: メモリ使用率のターゲット値（%）
+    Default: 80
+    MinValue: 10
+    MaxValue: 90
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  # Target Tracking Scaling Policy - CPU
+  CPUTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: TargetTrackingScaling
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUTargetValue
+        ScaleOutCooldown: !Ref ScaleUpCooldown
+        ScaleInCooldown: !Ref ScaleDownCooldown
+        DisableScaleIn: false
+
+  # Step Scaling Policy - Scale Up
+  StepScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      AdjustmentType: ChangeInCapacity
+      StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          MetricIntervalUpperBound: 50
+          ScalingAdjustment: 1
+        - MetricIntervalLowerBound: 50
+          ScalingAdjustment: 2
+      Cooldown: !Ref ScaleUpCooldown
+
+  # Step Scaling Policy - Scale Down
+  StepScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: StepScaling
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      AdjustmentType: ChangeInCapacity
+      StepAdjustments:
+        - MetricIntervalUpperBound: 0
+          MetricIntervalLowerBound: -30
+          ScalingAdjustment: -1
+        - MetricIntervalUpperBound: -30
+          ScalingAdjustment: -2
+      Cooldown: !Ref ScaleDownCooldown
+
+  # CloudWatch Alarms
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-HighCPU'
+      AlarmDescription: 'CPU使用率が高い場合のアラーム'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroupName
+      AlarmActions:
+        - !Ref StepScaleUpPolicy
+        - !Ref SNSTopicArn
+      TreatMissingData: notBreaching
+
+  LowCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-LowCPU'
+      AlarmDescription: 'CPU使用率が低い場合のアラーム'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 20
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroupName
+      AlarmActions:
+        - !Ref StepScaleDownPolicy
+      TreatMissingData: notBreaching
+
+  # Memory Utilization Alarm (カスタムメトリクス)
+  HighMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-HighMemory'
+      AlarmDescription: 'メモリ使用率が高い場合のアラーム'
+      MetricName: mem_used_percent
+      Namespace: !Sub '${ProjectName}/${Environment}'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref MemoryTargetValue
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroupName
+      AlarmActions:
+        - !Ref StepScaleUpPolicy
+        - !Ref SNSTopicArn
+      TreatMissingData: notBreaching
+
+  # Disk Space Alarm
+  HighDiskUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-HighDiskUsage'
+      AlarmDescription: 'ディスク使用率が高い場合のアラーム'
+      MetricName: used_percent
+      Namespace: !Sub '${ProjectName}/${Environment}'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroupName
+      AlarmActions:
+        - !Ref SNSTopicArn
+      TreatMissingData: notBreaching
+
+  # SNS Topic for Notifications
+  SNSTopicArn:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-EC2-Alerts'
+      DisplayName: !Sub '${ProjectName} ${Environment} EC2 Alerts'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Scheduled Scaling for Cost Optimization (非本番環境)
+  ScheduledScaleDownAction:
+    Type: AWS::AutoScaling::ScheduledAction
+    Condition: !Not [!Condition IsProduction]
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      DesiredCapacity: 0
+      MinSize: 0
+      MaxSize: 0
+      Recurrence: '0 19 * * MON-FRI'  # 平日19時にスケールダウン
+      TimeZone: 'Asia/Tokyo'
+
+  ScheduledScaleUpAction:
+    Type: AWS::AutoScaling::ScheduledAction
+    Condition: !Not [!Condition IsProduction]
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 2
+      Recurrence: '0 9 * * MON-FRI'   # 平日9時にスケールアップ
+      TimeZone: 'Asia/Tokyo'
+
+Outputs:
+  CPUTargetTrackingPolicyArn:
+    Description: CPU Target Tracking Policy ARN
+    Value: !Ref CPUTargetTrackingPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-CPU-TargetTracking-Policy'
+  
+  StepScaleUpPolicyArn:
+    Description: Step Scale Up Policy ARN
+    Value: !Ref StepScaleUpPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-StepScaleUp-Policy'
+  
+  StepScaleDownPolicyArn:
+    Description: Step Scale Down Policy ARN
+    Value: !Ref StepScaleDownPolicy
+    Export:
+      Name: !Sub '${AWS::StackName}-StepScaleDown-Policy'
+  
+  SNSTopicArn:
+    Description: SNS Topic ARN for alerts
+    Value: !Ref SNSTopicArn
+    Export:
+      Name: !Sub '${AWS::StackName}-SNS-Topic-Arn'
+  
+  HighCPUAlarmName:
+    Description: High CPU Alarm Name
+    Value: !Ref HighCPUAlarm
+    Export:
+      Name: !Sub '${AWS::StackName}-HighCPU-Alarm'

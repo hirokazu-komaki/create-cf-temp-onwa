@@ -1,0 +1,411 @@
+{
+  "configurationIndex": {
+    "version": "1.0",
+    "lastUpdated": "2024-01-15",
+    "description": "Well-Architected CloudFormation テンプレート設定ファイルの包括的なインデックス",
+    
+    "foundationServices": {
+      "iam": {
+        "description": "Identity and Access Management設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/foundation/iam/iam-config-basic.json",
+            "description": "開発環境用の基本的なIAM設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["Security"]
+          },
+          "advanced": {
+            "file": "cf-templates/foundation/iam/iam-config-advanced.json",
+            "description": "ステージング環境用の高度なIAM設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Security", "OperationalExcellence"]
+          },
+          "enterprise": {
+            "file": "cf-templates/foundation/iam/iam-config-enterprise.json",
+            "description": "本番環境用のエンタープライズIAM設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["Security", "OperationalExcellence", "Reliability"]
+          }
+        }
+      },
+      
+      "kms": {
+        "description": "Key Management Service設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/foundation/kms/kms-config-basic.json",
+            "description": "開発環境用の基本的なKMS設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["Security"]
+          },
+          "advanced": {
+            "file": "cf-templates/foundation/kms/kms-config-advanced.json",
+            "description": "ステージング環境用の高度なKMS設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Security", "Reliability"]
+          },
+          "enterprise": {
+            "file": "cf-templates/foundation/kms/kms-config-enterprise.json",
+            "description": "本番環境用のエンタープライズKMS設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["Security", "Reliability", "OperationalExcellence"]
+          }
+        }
+      },
+      
+      "organization": {
+        "description": "AWS Organizations設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/foundation/organization/organization-config-basic.json",
+            "description": "基本的なAWS Organizations設定",
+            "useCase": "シンプルな組織構造",
+            "complexity": "低",
+            "wellArchitectedPillars": ["OperationalExcellence"]
+          },
+          "advanced": {
+            "file": "cf-templates/foundation/organization/organization-config-advanced.json",
+            "description": "高度なAWS Organizations設定",
+            "useCase": "マルチアカウント環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["OperationalExcellence", "Security"]
+          },
+          "enterprise": {
+            "file": "cf-templates/foundation/organization/organization-config-enterprise.json",
+            "description": "エンタープライズAWS Organizations設定",
+            "useCase": "大規模エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "config": {
+        "description": "AWS Config設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/foundation/config/config-config-basic.json",
+            "description": "開発環境用の基本的なAWS Config設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["OperationalExcellence"]
+          },
+          "advanced": {
+            "file": "cf-templates/foundation/config/config-config-advanced.json",
+            "description": "ステージング環境用の高度なAWS Config設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["OperationalExcellence", "Security"]
+          },
+          "enterprise": {
+            "file": "cf-templates/foundation/config/config-config-enterprise.json",
+            "description": "本番環境用のエンタープライズAWS Config設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      }
+    },
+    
+    "networkingServices": {
+      "vpc": {
+        "description": "Virtual Private Cloud設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/networking/vpc/vpc-config-basic.json",
+            "description": "開発環境用の基本的なVPC設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/networking/vpc/vpc-config-advanced.json",
+            "description": "ステージング環境用の高度なVPC設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "Security"]
+          },
+          "enterprise": {
+            "file": "cf-templates/networking/vpc/vpc-config-enterprise.json",
+            "description": "本番環境用のエンタープライズVPC設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "elb": {
+        "description": "Elastic Load Balancer設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/networking/elb/elb-config-basic.json",
+            "description": "開発環境用の基本的なELB設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/networking/elb/elb-config-advanced.json",
+            "description": "ステージング環境用の高度なELB設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "PerformanceEfficiency"]
+          },
+          "enterprise": {
+            "file": "cf-templates/networking/elb/elb-config-enterprise.json",
+            "description": "本番環境用のエンタープライズELB設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "route53": {
+        "description": "Route 53 DNS設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/networking/route53/route53-config-basic.json",
+            "description": "開発環境用の基本的なRoute53設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/networking/route53/route53-config-advanced.json",
+            "description": "ステージング環境用の高度なRoute53設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "PerformanceEfficiency"]
+          },
+          "enterprise": {
+            "file": "cf-templates/networking/route53/route53-config-enterprise.json",
+            "description": "本番環境用のエンタープライズRoute53設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      }
+    },
+    
+    "computeServices": {
+      "ec2": {
+        "description": "Elastic Compute Cloud設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/compute/ec2/ec2-config-basic.json",
+            "description": "開発環境用の基本的なEC2設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/compute/ec2/ec2-config-advanced.json",
+            "description": "ステージング環境用の高度なEC2設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "PerformanceEfficiency"]
+          },
+          "enterprise": {
+            "file": "cf-templates/compute/ec2/ec2-config-enterprise.json",
+            "description": "本番環境用のエンタープライズEC2設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "lambda": {
+        "description": "AWS Lambda設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/compute/lambda/lambda-config-basic.json",
+            "description": "開発環境用の基本的なLambda設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/compute/lambda/lambda-config-advanced.json",
+            "description": "ステージング環境用の高度なLambda設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "OperationalExcellence"]
+          },
+          "enterprise": {
+            "file": "cf-templates/compute/lambda/lambda-config-enterprise.json",
+            "description": "本番環境用のエンタープライズLambda設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      }
+    },
+    
+    "integrationServices": {
+      "apiGateway": {
+        "description": "API Gateway設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/integration/api-gateway/api-gateway-config-basic.json",
+            "description": "開発環境用の基本的なAPI Gateway設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/integration/api-gateway/api-gateway-config-advanced.json",
+            "description": "ステージング環境用の高度なAPI Gateway設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["PerformanceEfficiency", "OperationalExcellence"]
+          },
+          "enterprise": {
+            "file": "cf-templates/integration/api-gateway/api-gateway-config-enterprise.json",
+            "description": "本番環境用のエンタープライズAPI Gateway設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "cloudwatch": {
+        "description": "CloudWatch監視設定",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/integration/cloudwatch/cloudwatch-config-basic.json",
+            "description": "開発環境用の基本的なCloudWatch設定",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["OperationalExcellence"]
+          },
+          "advanced": {
+            "file": "cf-templates/integration/cloudwatch/cloudwatch-config-advanced.json",
+            "description": "ステージング環境用の高度なCloudWatch設定",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["OperationalExcellence", "Reliability"]
+          },
+          "enterprise": {
+            "file": "cf-templates/integration/cloudwatch/cloudwatch-config-enterprise.json",
+            "description": "本番環境用のエンタープライズCloudWatch設定",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      }
+    },
+    
+    "integrationPatterns": {
+      "webApplication": {
+        "description": "Webアプリケーション統合パターン",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/patterns/web-application/web-app-config-basic.json",
+            "description": "開発環境用の基本的なWebアプリケーションパターン",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/patterns/web-application/web-app-config-advanced.json",
+            "description": "ステージング環境用の高度なWebアプリケーションパターン",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "PerformanceEfficiency"]
+          },
+          "enterprise": {
+            "file": "cf-templates/patterns/web-application/web-app-config-enterprise.json",
+            "description": "本番環境用のエンタープライズWebアプリケーションパターン",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "microservices": {
+        "description": "マイクロサービス統合パターン",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/patterns/microservices/microservices-config-basic.json",
+            "description": "開発環境用の基本的なマイクロサービスパターン",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/patterns/microservices/microservices-config-advanced.json",
+            "description": "ステージング環境用の高度なマイクロサービスパターン",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["Reliability", "PerformanceEfficiency", "OperationalExcellence"]
+          },
+          "enterprise": {
+            "file": "cf-templates/patterns/microservices/microservices-config-enterprise.json",
+            "description": "本番環境用のエンタープライズマイクロサービスパターン",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      },
+      
+      "dataProcessing": {
+        "description": "データ処理統合パターン",
+        "patterns": {
+          "basic": {
+            "file": "cf-templates/patterns/data-processing/data-processing-config-basic.json",
+            "description": "開発環境用の基本的なデータ処理パターン",
+            "useCase": "開発・テスト環境",
+            "complexity": "低",
+            "wellArchitectedPillars": ["CostOptimization"]
+          },
+          "advanced": {
+            "file": "cf-templates/patterns/data-processing/data-processing-config-advanced.json",
+            "description": "ステージング環境用の高度なデータ処理パターン",
+            "useCase": "ステージング・プリプロダクション環境",
+            "complexity": "中",
+            "wellArchitectedPillars": ["PerformanceEfficiency", "CostOptimization", "OperationalExcellence"]
+          },
+          "enterprise": {
+            "file": "cf-templates/patterns/data-processing/data-processing-config-enterprise.json",
+            "description": "本番環境用のエンタープライズデータ処理パターン",
+            "useCase": "本番・エンタープライズ環境",
+            "complexity": "高",
+            "wellArchitectedPillars": ["All-Pillars"]
+          }
+        }
+      }
+    }
+  },
+  
+  "usageGuidelines": {
+    "patternSelection": {
+      "basic": "開発・テスト環境、学習目的、プロトタイプ作成に適用",
+      "advanced": "ステージング・プリプロダクション環境、中規模本番環境に適用",
+      "enterprise": "大規模本番環境、エンタープライズ環境、コンプライアンス要件がある環境に適用"
+    },
+    "wellArchitectedMapping": {
+      "OperationalExcellence": "運用の優秀性 - 監視、ログ記録、自動化",
+      "Security": "セキュリティ - 暗号化、アクセス制御、ネットワークセキュリティ",
+      "Reliability": "信頼性 - 高可用性、障害回復、バックアップ",
+      "PerformanceEfficiency": "パフォーマンス効率 - スケーリング、キャッシング、最適化",
+      "CostOptimization": "コスト最適化 - リソース効率、ライフサイクル管理",
+      "Sustainability": "持続可能性 - リソース効率、環境配慮"
+    }
+  }
+}

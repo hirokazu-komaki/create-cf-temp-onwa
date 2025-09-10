@@ -1,0 +1,11 @@
+{
+  "ProjectName": "MyDataPipeline",
+  "Environment": "dev",
+  "ProcessingPattern": "Basic",
+  "KinesisShardCount": 1,
+  "KinesisRetentionHours": 24,
+  "LambdaMemorySize": 256,
+  "LambdaTimeout": 300,
+  "EnableDataLake": "true",
+  "EnableRealTimeAnalytics": "false"
+}

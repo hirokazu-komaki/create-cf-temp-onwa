@@ -1,0 +1,29 @@
+{
+  "Parameters": {
+    "InstancePattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "InstanceType": "t3.medium",
+    "AMIId": "ami-0abcdef1234567890",
+    "KeyPairName": "my-staging-keypair",
+    "VpcId": "vpc-87654321",
+    "SubnetIds": ["subnet-12345678", "subnet-87654321"],
+    "EnableDetailedMonitoring": "true",
+    "EnableAutoScaling": "true",
+    "MinSize": 2,
+    "MaxSize": 6,
+    "DesiredCapacity": 2,
+    "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/my-targets/1234567890123456",
+    "EnableEBSOptimization": "true",
+    "RootVolumeSize": 20,
+    "RootVolumeType": "gp3",
+    "EnableEncryption": "true"
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "Reliability,PerformanceEfficiency"
+  },
+  "Description": "ステージング環境用の高度なEC2設定 - オートスケーリング、詳細監視、暗号化"
+}

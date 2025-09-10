@@ -1,0 +1,573 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠AWS Organizations設定テンプレート - SCP、アカウント管理、ガバナンス設定'
+
+Metadata:
+  WellArchitectedCompliance:
+    Security:
+      - SEC01-BP01  # 強力なアイデンティティ基盤を確立する
+      - SEC01-BP02  # 一元化されたアイデンティティプロバイダーを使用する
+      - SEC02-BP01  # 最小権限の原則を使用する
+      - SEC03-BP01  # プログラムによるアクセスを制御する
+    OperationalExcellence:
+      - OPS01-BP01  # 組織の優先順位を評価する
+      - OPS01-BP02  # 組織構造を評価する
+      - OPS04-BP01  # 設定管理システムを実装する
+    CostOptimization:
+      - COST01-BP01  # コスト最適化機能を実装する
+      - COST02-BP01  # ガバナンスを実装する
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なOrganization設定 - 単純なOU構造"
+      UseCases: ["小規模組織", "シンプルなガバナンス"]
+    Advanced:
+      Description: "高度なOrganization設定 - 複数OU、詳細SCP"
+      UseCases: ["中規模組織", "部門別管理"]
+    Enterprise:
+      Description: "エンタープライズOrganization設定 - 包括的ガバナンス"
+      UseCases: ["大規模組織", "厳格なコンプライアンス"]
+
+Parameters:
+  OrganizationPattern:
+    Type: String
+    Default: Basic
+    AllowedValues: [Basic, Advanced, Enterprise]
+    Description: Organization設定パターンの選択
+  
+  OrganizationName:
+    Type: String
+    Default: MyOrganization
+    Description: 組織名
+    
+  EnableAllFeatures:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: すべての機能を有効にするか（SCPを使用するには必要）
+    
+  EnableCloudTrail:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 組織全体でCloudTrailを有効にするか
+    
+  EnableConfig:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 組織全体でConfigを有効にするか
+    
+  EnableGuardDuty:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 組織全体でGuardDutyを有効にするか
+    
+  EnableSecurityHub:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 組織全体でSecurity Hubを有効にするか
+    
+  DenyRootUserActions:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: ルートユーザーのアクションを制限するか
+    
+  RestrictRegions:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 使用可能リージョンを制限するか
+    
+  AllowedRegions:
+    Type: CommaDelimitedList
+    Default: 'us-east-1,us-west-2,ap-northeast-1'
+    Description: 使用を許可するリージョンのリスト
+
+Conditions:
+  IsAllFeaturesEnabled: !Equals [!Ref EnableAllFeatures, 'true']
+  IsCloudTrailEnabled: !Equals [!Ref EnableCloudTrail, 'true']
+  IsConfigEnabled: !Equals [!Ref EnableConfig, 'true']
+  IsGuardDutyEnabled: !Equals [!Ref EnableGuardDuty, 'true']
+  IsSecurityHubEnabled: !Equals [!Ref EnableSecurityHub, 'true']
+  IsDenyRootUserEnabled: !Equals [!Ref DenyRootUserActions, 'true']
+  IsRegionRestricted: !Equals [!Ref RestrictRegions, 'true']
+  IsBasicPattern: !Equals [!Ref OrganizationPattern, 'Basic']
+  IsAdvancedPattern: !Equals [!Ref OrganizationPattern, 'Advanced']
+  IsEnterprisePattern: !Equals [!Ref OrganizationPattern, 'Enterprise']
+
+Resources:
+  # Organization作成
+  Organization:
+    Type: AWS::Organizations::Organization
+    Properties:
+      FeatureSet: !If [IsAllFeaturesEnabled, 'ALL', 'CONSOLIDATED_BILLING']
+
+  # 基本OU構造
+  SecurityOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Security
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: SecurityAccounts
+        - Key: WellArchitected
+          Value: SEC01-BP02
+
+  ProductionOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Properties:
+      Name: Production
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: ProductionWorkloads
+        - Key: Environment
+          Value: Production
+
+  DevelopmentOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Condition: IsAdvancedPattern
+    Properties:
+      Name: Development
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: DevelopmentWorkloads
+        - Key: Environment
+          Value: Development
+
+  StagingOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Condition: IsAdvancedPattern
+    Properties:
+      Name: Staging
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: StagingWorkloads
+        - Key: Environment
+          Value: Staging
+
+  # エンタープライズ用追加OU
+  SandboxOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Condition: IsEnterprisePattern
+    Properties:
+      Name: Sandbox
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: ExperimentalWorkloads
+        - Key: Environment
+          Value: Sandbox
+
+  SharedServicesOU:
+    Type: AWS::Organizations::OrganizationalUnit
+    Condition: IsEnterprisePattern
+    Properties:
+      Name: SharedServices
+      ParentId: !GetAtt Organization.RootId
+      Tags:
+        - Key: Purpose
+          Value: SharedInfrastructure
+        - Key: Environment
+          Value: Shared
+
+  # Service Control Policies (SCP)
+  DenyRootUserSCP:
+    Type: AWS::Organizations::Policy
+    Condition: IsDenyRootUserEnabled
+    Properties:
+      Name: DenyRootUserActions
+      Description: ルートユーザーの危険なアクションを拒否
+      Type: SERVICE_CONTROL_POLICY
+      Content: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyRootUserActions",
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "arn:aws:iam::*:root"
+              },
+              "Action": [
+                "iam:CreateUser",
+                "iam:CreateRole",
+                "iam:CreateAccessKey",
+                "iam:DeleteUser",
+                "iam:DeleteRole",
+                "organizations:LeaveOrganization",
+                "account:CloseAccount"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      Tags:
+        - Key: Purpose
+          Value: SecurityControl
+        - Key: WellArchitected
+          Value: SEC03-BP02
+
+  RegionRestrictionSCP:
+    Type: AWS::Organizations::Policy
+    Condition: IsRegionRestricted
+    Properties:
+      Name: RestrictRegions
+      Description: 使用可能リージョンを制限
+      Type: SERVICE_CONTROL_POLICY
+      Content: !Sub 
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DenyAllOutsideAllowedRegions",
+                "Effect": "Deny",
+                "Action": "*",
+                "Resource": "*",
+                "Condition": {
+                  "StringNotEquals": {
+                    "aws:RequestedRegion": [${RegionList}]
+                  },
+                  "ForAllValues:StringNotEquals": {
+                    "aws:PrincipalServiceName": [
+                      "cloudfront.amazonaws.com",
+                      "iam.amazonaws.com",
+                      "route53.amazonaws.com",
+                      "support.amazonaws.com"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        - RegionList: !Sub
+          - '"${inner}"'
+          - inner: !Join
+            - '", "'
+            - !Ref AllowedRegions
+      Tags:
+        - Key: Purpose
+          Value: RegionControl
+        - Key: WellArchitected
+          Value: SEC02-BP01
+
+  DenyHighRiskActionsSCP:
+    Type: AWS::Organizations::Policy
+    Condition: IsEnterprisePattern
+    Properties:
+      Name: DenyHighRiskActions
+      Description: 高リスクアクションを拒否
+      Type: SERVICE_CONTROL_POLICY
+      Content: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyHighRiskActions",
+              "Effect": "Deny",
+              "Action": [
+                "ec2:TerminateInstances",
+                "rds:DeleteDBInstance",
+                "s3:DeleteBucket",
+                "iam:DeleteRole",
+                "iam:DeleteUser",
+                "organizations:LeaveOrganization",
+                "account:CloseAccount"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringNotEquals": {
+                  "aws:PrincipalServiceName": [
+                    "autoscaling.amazonaws.com",
+                    "backup.amazonaws.com"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      Tags:
+        - Key: Purpose
+          Value: RiskMitigation
+        - Key: WellArchitected
+          Value: SEC02-BP01 
+ # SCP Attachments
+  AttachDenyRootUserSCPToRoot:
+    Type: AWS::Organizations::PolicyAttachment
+    Condition: IsDenyRootUserEnabled
+    Properties:
+      PolicyId: !Ref DenyRootUserSCP
+      TargetId: !GetAtt Organization.RootId
+      TargetType: ROOT
+
+  AttachRegionRestrictionSCPToRoot:
+    Type: AWS::Organizations::PolicyAttachment
+    Condition: IsRegionRestricted
+    Properties:
+      PolicyId: !Ref RegionRestrictionSCP
+      TargetId: !GetAtt Organization.RootId
+      TargetType: ROOT
+
+  AttachHighRiskSCPToProduction:
+    Type: AWS::Organizations::PolicyAttachment
+    Condition: IsEnterprisePattern
+    Properties:
+      PolicyId: !Ref DenyHighRiskActionsSCP
+      TargetId: !Ref ProductionOU
+      TargetType: ORGANIZATIONAL_UNIT
+
+  # CloudTrail Organization設定
+  OrganizationCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Condition: IsCloudTrailEnabled
+    Properties:
+      TrailName: !Sub '${OrganizationName}-organization-trail'
+      S3BucketName: !Ref CloudTrailBucket
+      IncludeGlobalServiceEvents: true
+      IsMultiRegionTrail: true
+      EnableLogFileValidation: true
+      IsOrganizationTrail: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+          DataResources:
+            - Type: 'AWS::S3::Object'
+              Values: 
+                - 'arn:aws:s3:::*/*'
+            - Type: 'AWS::Lambda::Function'
+              Values:
+                - 'arn:aws:lambda:*:*:function:*'
+      Tags:
+        - Key: Purpose
+          Value: OrganizationAudit
+        - Key: WellArchitected
+          Value: SEC04-BP01
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsCloudTrailEnabled
+    Properties:
+      BucketName: !Sub '${OrganizationName}-cloudtrail-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 2555  # 7 years
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+      Tags:
+        - Key: Purpose
+          Value: CloudTrailLogs
+        - Key: WellArchitected
+          Value: SEC04-BP01
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: IsCloudTrailEnabled
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailBucket.Arn
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${CloudTrailBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                's3:x-amz-acl': bucket-owner-full-control
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt CloudTrailBucket.Arn
+              - !Sub '${CloudTrailBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # Config Organization設定
+  OrganizationConfigurationAggregator:
+    Type: AWS::Config::ConfigurationAggregator
+    Condition: IsConfigEnabled
+    Properties:
+      ConfigurationAggregatorName: !Sub '${OrganizationName}-config-aggregator'
+      OrganizationAggregationSource:
+        AllAwsRegions: true
+        RoleArn: !GetAtt ConfigAggregatorRole.Arn
+      Tags:
+        - Key: Purpose
+          Value: ComplianceMonitoring
+        - Key: WellArchitected
+          Value: SEC04-BP02
+
+  ConfigAggregatorRole:
+    Type: AWS::IAM::Role
+    Condition: IsConfigEnabled
+    Properties:
+      RoleName: !Sub '${OrganizationName}-config-aggregator-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/ConfigRole
+      Policies:
+        - PolicyName: OrganizationConfigAggregatorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - organizations:DescribeOrganization
+                  - organizations:ListAccounts
+                  - organizations:ListAWSServiceAccessForOrganization
+                Resource: '*'
+
+  # GuardDuty Organization設定
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Condition: IsGuardDutyEnabled
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+      DataSources:
+        S3Logs:
+          Enable: true
+        KubernetesConfiguration:
+          AuditLogs:
+            Enable: true
+        MalwareProtection:
+          ScanEc2InstanceWithFindings:
+            EbsVolumes: true
+      Tags:
+        - Key: Purpose
+          Value: ThreatDetection
+        - Key: WellArchitected
+          Value: SEC04-BP03
+
+  # Security Hub Organization設定
+  SecurityHub:
+    Type: AWS::SecurityHub::Hub
+    Condition: IsSecurityHubEnabled
+    Properties:
+      Tags:
+        Purpose: SecurityCompliance
+        WellArchitected: SEC04-BP02
+
+Outputs:
+  OrganizationId:
+    Description: 'Organization ID'
+    Value: !Ref Organization
+    Export:
+      Name: !Sub '${OrganizationName}-organization-id'
+
+  OrganizationRootId:
+    Description: 'Organization Root ID'
+    Value: !GetAtt Organization.RootId
+    Export:
+      Name: !Sub '${OrganizationName}-root-id'
+
+  SecurityOUId:
+    Description: 'Security OU ID'
+    Value: !Ref SecurityOU
+    Export:
+      Name: !Sub '${OrganizationName}-security-ou-id'
+
+  ProductionOUId:
+    Description: 'Production OU ID'
+    Value: !Ref ProductionOU
+    Export:
+      Name: !Sub '${OrganizationName}-production-ou-id'
+
+  DevelopmentOUId:
+    Condition: IsAdvancedPattern
+    Description: 'Development OU ID'
+    Value: !Ref DevelopmentOU
+    Export:
+      Name: !Sub '${OrganizationName}-development-ou-id'
+
+  StagingOUId:
+    Condition: IsAdvancedPattern
+    Description: 'Staging OU ID'
+    Value: !Ref StagingOU
+    Export:
+      Name: !Sub '${OrganizationName}-staging-ou-id'
+
+  SandboxOUId:
+    Condition: IsEnterprisePattern
+    Description: 'Sandbox OU ID'
+    Value: !Ref SandboxOU
+    Export:
+      Name: !Sub '${OrganizationName}-sandbox-ou-id'
+
+  SharedServicesOUId:
+    Condition: IsEnterprisePattern
+    Description: 'Shared Services OU ID'
+    Value: !Ref SharedServicesOU
+    Export:
+      Name: !Sub '${OrganizationName}-shared-services-ou-id'
+
+  CloudTrailArn:
+    Condition: IsCloudTrailEnabled
+    Description: 'Organization CloudTrail ARN'
+    Value: !GetAtt OrganizationCloudTrail.Arn
+    Export:
+      Name: !Sub '${OrganizationName}-cloudtrail-arn'
+
+  ConfigAggregatorName:
+    Condition: IsConfigEnabled
+    Description: 'Config Aggregator Name'
+    Value: !Ref OrganizationConfigurationAggregator
+    Export:
+      Name: !Sub '${OrganizationName}-config-aggregator-name'
+
+  GuardDutyDetectorId:
+    Condition: IsGuardDutyEnabled
+    Description: 'GuardDuty Detector ID'
+    Value: !Ref GuardDutyDetector
+    Export:
+      Name: !Sub '${OrganizationName}-guardduty-detector-id'
+
+  SecurityHubArn:
+    Condition: IsSecurityHubEnabled
+    Description: 'Security Hub ARN'
+    Value: !Ref SecurityHub
+    Export:
+      Name: !Sub '${OrganizationName}-securityhub-arn'
+
+  OrganizationPattern:
+    Description: '使用されたOrganizationパターン'
+    Value: !Ref OrganizationPattern
+    Export:
+      Name: !Sub '${OrganizationName}-organization-pattern'

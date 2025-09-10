@@ -1,0 +1,21 @@
+{
+  "Parameters": {
+    "KeyUsagePattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "EnableKeyRotation": "true",
+    "KeySpec": "SYMMETRIC_DEFAULT",
+    "KeyUsage": "ENCRYPT_DECRYPT",
+    "DeletionWindowInDays": 7,
+    "EnableMultiRegion": "true",
+    "CrossAccountAccess": "true",
+    "TrustedAccountIds": ["123456789012"]
+  },
+  "Tags": {
+    "Owner": "DevOps Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "Security,Reliability"
+  },
+  "Description": "ステージング環境用の高度なKMS設定 - 自動ローテーション、マルチリージョン対応"
+}

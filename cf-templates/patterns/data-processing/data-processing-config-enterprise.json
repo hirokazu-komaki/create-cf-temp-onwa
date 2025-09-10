@@ -1,0 +1,151 @@
+{
+  "Parameters": {
+    "PatternType": "DataProcessing",
+    "PatternComplexity": "Enterprise",
+    "ProjectName": "EnterpriseDataPlatform",
+    "Environment": "prod",
+    "Region": "us-east-1",
+    "AvailabilityZones": ["us-east-1a", "us-east-1b", "us-east-1c"],
+    
+    "DataIngestionConfig": {
+      "EnableKinesis": true,
+      "KinesisShardCount": 20,
+      "KinesisRetentionPeriod": 168,
+      "EnableKinesisAnalytics": true,
+      "EnableKinesisFirehose": true,
+      "FirehoseBufferSize": 128,
+      "FirehoseBufferInterval": 60,
+      "EnableSQS": true,
+      "SQSVisibilityTimeout": 300,
+      "SQSMessageRetentionPeriod": 1209600,
+      "EnableDMS": true,
+      "DMSReplicationInstanceClass": "dms.r5.xlarge",
+      "EnableKafka": true,
+      "KafkaInstanceType": "kafka.m5.large",
+      "KafkaNumberOfBrokers": 6
+    },
+    
+    "DataStorageConfig": {
+      "EnableS3": true,
+      "S3BucketName": "enterprise-data-platform-prod",
+      "S3StorageClass": "INTELLIGENT_TIERING",
+      "EnableS3Versioning": true,
+      "EnableS3Encryption": true,
+      "S3KMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012",
+      "EnableS3AccessLogging": true,
+      "EnableS3ObjectLock": true,
+      "S3LifecycleRules": [
+        {
+          "Id": "IntelligentTiering",
+          "Status": "Enabled",
+          "Transitions": [
+            {
+              "Days": 0,
+              "StorageClass": "INTELLIGENT_TIERING"
+            },
+            {
+              "Days": 365,
+              "StorageClass": "GLACIER"
+            },
+            {
+              "Days": 2555,
+              "StorageClass": "DEEP_ARCHIVE"
+            }
+          ]
+        }
+      ],
+      "EnableDataLake": true,
+      "DataLakeFormationEnabled": true
+    },
+    
+    "DataProcessingConfig": {
+      "EnableLambda": true,
+      "LambdaMemorySize": 3008,
+      "LambdaTimeout": 900,
+      "EnableEMR": true,
+      "EMRInstanceType": "m5.2xlarge",
+      "EMRInstanceCount": 10,
+      "EMRApplications": ["Spark", "Hadoop", "Hive", "Presto", "Zeppelin"],
+      "EnableEMRServerless": true,
+      "EnableGlue": true,
+      "GlueWorkerType": "G.2X",
+      "GlueNumberOfWorkers": 50,
+      "EnableStepFunctions": true,
+      "EnableBatch": true,
+      "BatchComputeEnvironmentType": "MANAGED",
+      "BatchInstanceTypes": ["m5.large", "m5.xlarge", "m5.2xlarge"]
+    },
+    
+    "DataWarehouseConfig": {
+      "EnableRedshift": true,
+      "RedshiftNodeType": "ra3.4xlarge",
+      "RedshiftNumberOfNodes": 6,
+      "RedshiftDatabaseName": "enterprise_dw",
+      "EnableRedshiftEncryption": true,
+      "RedshiftKMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012",
+      "RedshiftBackupRetentionPeriod": 30,
+      "EnableRedshiftSpectrum": true,
+      "EnableRedshiftConcurrencyScaling": true,
+      "EnableRedshiftServerless": true
+    },
+    
+    "AnalyticsConfig": {
+      "EnableAthena": true,
+      "AthenaWorkgroup": "enterprise-analytics",
+      "EnableQuickSight": true,
+      "QuickSightEdition": "ENTERPRISE",
+      "EnableElasticsearch": true,
+      "ElasticsearchVersion": "7.10",
+      "ElasticsearchInstanceType": "r5.xlarge.elasticsearch",
+      "ElasticsearchInstanceCount": 6,
+      "EnableElasticsearchEncryption": true,
+      "EnableSageMaker": true,
+      "SageMakerInstanceType": "ml.m5.xlarge",
+      "EnableDataBrew": true
+    },
+    
+    "DataGovernanceConfig": {
+      "EnableDataCatalog": true,
+      "EnableDataLineage": true,
+      "EnableDataQuality": true,
+      "EnableDataPrivacy": true,
+      "EnableMacie": true,
+      "EnableLakeFormation": true,
+      "EnableDataZone": true
+    },
+    
+    "SecurityConfig": {
+      "EnableVPCEndpoints": true,
+      "EnablePrivateSubnets": true,
+      "EnableNACLs": true,
+      "EnableSecurityGroups": true,
+      "EnableIAMRoles": true,
+      "EnableKMSEncryption": true,
+      "EnableCloudTrail": true,
+      "EnableConfig": true,
+      "EnableGuardDuty": true
+    },
+    
+    "MonitoringConfig": {
+      "EnableCloudWatch": true,
+      "EnableXRayTracing": true,
+      "LogRetentionDays": 365,
+      "EnableDashboard": true,
+      "EnableDataQualityMonitoring": true,
+      "EnableCostMonitoring": true,
+      "EnablePerformanceMonitoring": true,
+      "EnableAnomalyDetection": true,
+      "EnableApplicationInsights": true
+    }
+  },
+  "Tags": {
+    "Owner": "Data Platform Team",
+    "CostCenter": "Analytics",
+    "Environment": "Production",
+    "Architecture": "DataProcessing",
+    "Compliance": "SOC2,ISO27001,GDPR",
+    "WellArchitected": "All-Pillars",
+    "DataClassification": "Confidential"
+  },
+  "Description": "本番環境用のエンタープライズデータ処理プラットフォーム - 完全なデータガバナンス、セキュリティ、スケーラビリティ"
+}
