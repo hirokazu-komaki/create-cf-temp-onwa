@@ -369,10 +369,10 @@ jobs:
     - name: Run Well-Architected compliance check
       run: |
         python3 << 'EOF'
-        import yaml
+        from awscli.customizations.cloudformation.yamlhelper import yaml_parse
         
         with open('${{ matrix.template.template }}', 'r') as f:
-            template = yaml.safe_load(f)
+            template = yaml_parse(f.read())
         
         metadata = template.get('Metadata', {})
         wa_compliance = metadata.get('WellArchitectedCompliance', {})
