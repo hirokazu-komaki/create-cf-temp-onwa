@@ -121,10 +121,10 @@ jobs:
         # GitHub Outputsに設定
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
             f.write(f"target-environment={normalized_env}\n")
-            f.write(f"deployment-region={deployment_region or 'us-east-1'}\n")
+            f.write(f"deployment-region={deployment_region or 'ap-northeast-1'}\n")
         
         print(f"Target Environment: {normalized_env}")
-        print(f"Deployment Region: {deployment_region or 'us-east-1'}")
+        print(f"Deployment Region: {deployment_region or 'ap-northeast-1'}")
         print("Single Account Mode: All environments use the same AWS account")
         EOF
       env:
@@ -489,7 +489,7 @@ jobs:
         pip install boto3
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
-        sudo ./aws/install
+        sudo ./aws/install --update
 
     - name: Configure AWS credentials for deployment
       uses: aws-actions/configure-aws-credentials@v4
