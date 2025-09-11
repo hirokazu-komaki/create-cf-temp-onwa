@@ -370,7 +370,7 @@ Resources:
       MinSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MinSize]
       MaxSize: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, MaxSize]
       DesiredCapacity: !FindInMap [InstanceTypePatterns, !Ref ConfigurationPattern, DesiredCapacity]
-      DefaultCooldown: 300
+      # DefaultCooldown: 300
       VPCZoneIdentifier: !Ref SubnetIds
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
