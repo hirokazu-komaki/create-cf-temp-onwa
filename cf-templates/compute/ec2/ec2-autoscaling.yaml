@@ -256,6 +256,7 @@ Conditions:
   IsAdvancedPattern: !Condition UseAdvancedPattern
   IsEnterprisePattern: !Condition UseEnterprisePattern
   IsAdvancedOrEnterprise: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+  CreateDashboard: !And [!Condition IsAdvancedOrEnterprise, !Condition CreateAutoScalingGroup]
   
   # Storage Configuration Conditions
   HasCustomRootVolumeSize: !Not [!Equals [!Ref RootVolumeSize, 0]]
@@ -687,7 +688,7 @@ Resources:
   # CloudWatch Dashboard
   MonitoringDashboard:
     Type: AWS::CloudWatch::Dashboard
-    Condition: IsAdvancedOrEnterprise
+    Condition: CreateDashboard
     Properties:
       DashboardName: !Sub '${ProjectName}-${Environment}-Dashboard'
       DashboardBody: !Sub |
