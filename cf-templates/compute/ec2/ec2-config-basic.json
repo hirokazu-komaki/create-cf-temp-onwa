@@ -7,7 +7,7 @@
     "AMIId": "ami-0228232d282f16465",
     "KeyPairName": "my-dev-keypair",
     "VpcId": "vpc-0eaf2cdc55cae20d5",
-    "SubnetId": "subnet-04590383ce70d10ad",
+    "SubnetId": ["subnet-04590383ce70d10ad"],
     "EnableDetailedMonitoring": "false",
     "EnableAutoScaling": "false",
     "MinSize": 1,
