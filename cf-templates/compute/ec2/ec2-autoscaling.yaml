@@ -89,7 +89,6 @@ Parameters:
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: サブネットIDリスト（複数AZ推奨）
-    Default: ["subnet-04590383ce70d10ad"]
   
   KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
