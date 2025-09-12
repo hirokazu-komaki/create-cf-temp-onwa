@@ -3,7 +3,7 @@
     "InstancePattern": "Basic",
     "ProjectName": "MyApp",
     "Environment": "dev",
-    "InstanceType": "t2.micro",
+    "InstanceType": "t3.micro",
     "AMIId": "ami-0abcdef1234567890",
     "KeyPairName": "my-dev-keypair",
     "VpcId": "vpc-12345678",
