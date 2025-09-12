@@ -186,14 +186,14 @@ Rules:
   
   ValidateCustomSizing:
     RuleCondition: !Or
-      - !Not [!Equals [!Ref CustomMinSize, 0]]
-      - !Not [!Equals [!Ref CustomMaxSize, 0]]
-      - !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+      - !Not [!Equals [!Ref CustomMinSize, '0']]
+      - !Not [!Equals [!Ref CustomMaxSize, '0']]
+      - !Not [!Equals [!Ref CustomDesiredCapacity, '0']]
     Assertions:
       - Assert: !And
-          - !Not [!Equals [!Ref CustomMinSize, 0]]
-          - !Not [!Equals [!Ref CustomMaxSize, 0]]
-          - !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+          - !Not [!Equals [!Ref CustomMinSize, '0']]
+          - !Not [!Equals [!Ref CustomMaxSize, '0']]
+          - !Not [!Equals [!Ref CustomDesiredCapacity, '0']]
         AssertDescription: カスタムサイジングパラメータを使用する場合は、CustomMinSize、CustomMaxSize、CustomDesiredCapacityをすべて指定してください
   
   ValidateEnterpriseFeatures:
@@ -222,9 +222,9 @@ Conditions:
   
   # ===== Parameter Override Conditions (Phase 3 - Clean Implementation) =====
   HasCustomInstanceType: !Not [!Equals [!Ref CustomInstanceType, '']]
-  HasCustomMinSize: !Not [!Equals [!Ref CustomMinSize, 0]]
-  HasCustomMaxSize: !Not [!Equals [!Ref CustomMaxSize, 0]]
-  HasCustomDesiredCapacity: !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+  HasCustomMinSize: !Not [!Equals [!Ref CustomMinSize, '0']]
+  HasCustomMaxSize: !Not [!Equals [!Ref CustomMaxSize, '0']]
+  HasCustomDesiredCapacity: !Not [!Equals [!Ref CustomDesiredCapacity, '0']]
   
   
   # ===== Pattern Resolution Conditions (Phase 3 - Clean Implementation) =====
@@ -247,7 +247,7 @@ Conditions:
   CreateDashboard: !And [!Condition IsAdvancedOrEnterprise, !Condition CreateAutoScalingGroup]
   
   # Storage Configuration Conditions
-  HasCustomRootVolumeSize: !Not [!Equals [!Ref RootVolumeSize, 0]]
+  HasCustomRootVolumeSize: !Not [!Equals [!Ref RootVolumeSize, '0']]
   HasCustomRootVolumeType: !Not [!Equals [!Ref RootVolumeType, '']]
   EnableEBSEncryption: !And [!Equals [!Ref EnableEncryption, 'true'], !Condition IsEnterprisePattern]
   HasCustomKMSKey: !Not [!Equals [!Ref KMSKeyId, '']]
