@@ -197,7 +197,7 @@ Rules:
         AssertDescription: カスタムサイジングパラメータを使用する場合は、CustomMinSize、CustomMaxSize、CustomDesiredCapacityをすべて指定してください
   
   ValidateEnterpriseFeatures:
-    RuleCondition: !Not [!Equals [!Ref ConfigurationPattern, Enterprise]]
+    RuleCondition: !Not [!Equals [!Ref ConfigurationPattern, 'Enterprise']]
     Assertions:
       - Assert: !Equals [!Ref EnableNitroEnclave, 'false']
         AssertDescription: Nitro EnclaveはEnterpriseパターンでのみ使用可能です
@@ -205,7 +205,7 @@ Rules:
         AssertDescription: 混合インスタンスポリシーはEnterpriseパターンでのみ使用可能です
   
   ValidateAdvancedFeatures:
-    RuleCondition: !Equals [!Ref ConfigurationPattern, Basic]
+    RuleCondition: !Equals [!Ref ConfigurationPattern, 'Basic']
     Assertions:
       - Assert: !Equals [!Ref EnableSpotInstances, 'false']
         AssertDescription: スポットインスタンスはAdvanced/Enterpriseパターンでのみ使用可能です
@@ -215,7 +215,7 @@ Rules:
 Conditions:
   # ===== Basic Feature Conditions =====
   HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
-  IsProduction: !Equals [!Ref Environment, prod]
+  IsProduction: !Equals [!Ref Environment, 'prod']
   EnableMonitoring: !Equals [!Ref EnableDetailedMonitoring, 'true']
   UseSpotInstances: !Equals [!Ref EnableSpotInstances, 'true']
   CreateAutoScalingGroup: !Equals [!Ref EnableAutoScaling, 'true']
@@ -241,9 +241,9 @@ Conditions:
   
   # ===== Pattern Resolution Conditions (Phase 3 - Clean Implementation) =====
   # Determine effective configuration pattern using only new parameter structure
-  UseBasicPattern: !Equals [!Ref ConfigurationPattern, Basic]
-  UseAdvancedPattern: !Equals [!Ref ConfigurationPattern, Advanced]
-  UseEnterprisePattern: !Equals [!Ref ConfigurationPattern, Enterprise]
+  UseBasicPattern: !Equals [!Ref ConfigurationPattern, 'Basic']
+  UseAdvancedPattern: !Equals [!Ref ConfigurationPattern, 'Advanced']
+  UseEnterprisePattern: !Equals [!Ref ConfigurationPattern, 'Enterprise']
   
   # ===== Parameter Override Logic (Phase 3 - Clean Implementation) =====
   # Use custom parameters when provided, otherwise use pattern-based defaults
