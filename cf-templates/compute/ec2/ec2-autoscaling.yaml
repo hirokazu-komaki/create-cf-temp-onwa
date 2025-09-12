@@ -253,6 +253,8 @@ Conditions:
   HasCustomKMSKey: !Not [!Equals [!Ref KMSKeyId, '']]
   
   # Load Balancer Integration Conditions
+  # Note: リスト型パラメータの比較では!Joinを使用する必要があります
+  # 例: !Equals [!Join [',', !Ref ListParam], ''] (リストが空かチェック)
   HasTargetGroups: !Not [!Equals [!Join ['', !Ref TargetGroupArns], '']]
   UseTargetGroups: !Condition HasTargetGroups
   
