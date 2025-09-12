@@ -221,22 +221,10 @@ Conditions:
   CreateAutoScalingGroup: !Equals [!Ref EnableAutoScaling, 'true']
   
   # ===== Parameter Override Conditions (Phase 3 - Clean Implementation) =====
-  HasCustomInstanceType: !Not 
-    - !Equals 
-      - !Ref CustomInstanceType
-      - ''
-  HasCustomMinSize: !Not 
-    - !Equals 
-      - !Ref CustomMinSize
-      - 0
-  HasCustomMaxSize: !Not 
-    - !Equals 
-      - !Ref CustomMaxSize
-      - 0
-  HasCustomDesiredCapacity: !Not 
-    - !Equals 
-      - !Ref CustomDesiredCapacity
-      - 0
+  HasCustomInstanceType: !Not [!Equals [!Ref CustomInstanceType, '']]
+  HasCustomMinSize: !Not [!Equals [!Ref CustomMinSize, 0]]
+  HasCustomMaxSize: !Not [!Equals [!Ref CustomMaxSize, 0]]
+  HasCustomDesiredCapacity: !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
   
   
   # ===== Pattern Resolution Conditions (Phase 3 - Clean Implementation) =====

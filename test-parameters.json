@@ -1,0 +1,54 @@
+[
+  {
+    "ParameterKey": "ConfigurationPattern",
+    "ParameterValue": "Basic"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "MyApp"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "CustomInstanceType",
+    "ParameterValue": "t2.micro"
+  },
+  {
+    "ParameterKey": "InstanceAMI",
+    "ParameterValue": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+  },
+  {
+    "ParameterKey": "KeyPairName",
+    "ParameterValue": "my-dev-keypair"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0eaf2cdc55cae20d5"
+  },
+  {
+    "ParameterKey": "SubnetIds",
+    "ParameterValue": "subnet-04590383ce70d10ad,subnet-062d1f6a49865334a"
+  },
+  {
+    "ParameterKey": "EnableDetailedMonitoring",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "EnableAutoScaling",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "CustomMinSize",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "CustomMaxSize",
+    "ParameterValue": "0"
+  },
+  {
+    "ParameterKey": "CustomDesiredCapacity",
+    "ParameterValue": "0"
+  }
+]
