@@ -4,7 +4,7 @@
     "ProjectName": "MyApp",
     "Environment": "dev",
     "CustomInstanceType": "t3.micro",
-    "InstanceAMI": "ami-0228232d282f16465",
+    "InstanceAMI": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64",
     "KeyPairName": "my-dev-keypair",
     "VpcId": "vpc-0eaf2cdc55cae20d5",
     "SubnetIds": ["subnet-04590383ce70d10ad", "subnet-062d1f6a49865334a"],
