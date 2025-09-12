@@ -222,6 +222,7 @@ jobs:
         python3 << 'EOF'
         import json
         import os
+        from pathlib import Path
         from jsonschema import validate, ValidationError
         
         config_files = json.loads(os.environ.get('CONFIG_FILES', '[]'))
@@ -243,8 +244,24 @@ jobs:
             }
         }
         
+        validated_count = 0
+        
         for config_file in config_files:
             if not config_file:
+                continue
+            
+            # Only validate files that are actually our config files
+            # Skip library files, schema files, and other non-config JSON files
+            config_path = Path(config_file)
+            
+            # Skip files in lib, include, site-packages, or other system directories
+            if any(part in ['lib', 'include', 'site-packages', '.git', 'node_modules'] for part in config_path.parts):
+                print(f"Skipping system file: {config_file}")
+                continue
+            
+            # Only validate files that match our config naming pattern
+            if not ('-config-' in config_file or config_file.endswith('-config.json')):
+                print(f"Skipping non-config file: {config_file}")
                 continue
                 
             print(f"Validating {config_file}...")
@@ -254,6 +271,7 @@ jobs:
                 
                 validate(instance=config, schema=config_schema)
                 print(f"✓ {config_file} is valid")
+                validated_count += 1
                 
             except json.JSONDecodeError as e:
                 print(f"✗ {config_file} has invalid JSON: {e}")
@@ -265,7 +283,10 @@ jobs:
                 print(f"✗ Error validating {config_file}: {e}")
                 exit(1)
         
-        print("All config files validated successfully!")
+        if validated_count == 0:
+            print("No config files found to validate")
+        else:
+            print(f"All {validated_count} config files validated successfully!")
         EOF
       env:
         CONFIG_FILES: ${{ steps.detect-configs.outputs.config-files }}
