@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "tests": {
+    "cloudwatch_resources": {
+      "success": true,
+      "issues": []
+    },
+    "configuration_pattern_monitoring": {
+      "success": true,
+      "issues": []
+    },
+    "auto_scaling_monitoring": {
+      "success": false,
+      "message": "Auto Scaling監視設定検証エラー: テンプレート解析が必要"
+    },
+    "iam_logging_permissions": {
+      "success": false,
+      "message": "IAMログ権限検証エラー: テンプレート解析が必要"
+    },
+    "sns_notification_setup": {
+      "success": false,
+      "message": "SNS通知設定検証エラー: テンプレート解析が必要"
+    },
+    "log_aggregation_retention": {
+      "success": false,
+      "message": "ログ集約・保持設定検証エラー: テンプレート解析が必要"
+    },
+    "monitoring_endpoints_connectivity": {
+      "success": false,
+      "message": "スキップ"
+    }
+  }
+}

@@ -1,0 +1,676 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Well-Architected準拠 EC2 Auto Scaling テンプレート - コスト最適化とセキュリティを重視'
+
+Metadata:
+  WellArchitectedCompliance:
+    OperationalExcellence: [OPS04-BP01, OPS04-BP02, OPS05-BP01]
+    Security: [SEC01-BP01, SEC02-BP02, SEC03-BP01, SEC05-BP01]
+    Reliability: [REL01-BP04, REL02-BP01, REL03-BP01, REL08-BP01]
+    PerformanceEfficiency: [PERF02-BP01, PERF03-BP01, PERF04-BP01]
+    CostOptimization: [COST02-BP05, COST05-BP01, COST06-BP01, COST07-BP01]
+    Sustainability: [SUS02-BP01, SUS04-BP02, SUS05-BP01]
+  
+  ConfigurationPatterns:
+    Basic:
+      Description: "基本的なEC2設定 - 開発環境向け"
+      InstanceTypes: [t3.micro, t3.small]
+      MinSize: 1
+      MaxSize: 2
+    Advanced:
+      Description: "高度なEC2設定 - ステージング環境向け"
+      InstanceTypes: [t3.medium, m5.large]
+      MinSize: 2
+      MaxSize: 4
+    Enterprise:
+      Description: "エンタープライズEC2設定 - 本番環境向け"
+      InstanceTypes: [m5.large, m5.xlarge, c5.large]
+      MinSize: 3
+      MaxSize: 10
+
+Parameters:
+
+  # ===== Core Infrastructure Parameters (Phase 2 - Standardized) =====
+  
+  ProjectName:
+    Type: String
+    Description: プロジェクト名 - リソース命名とタグ付けに使用
+    MinLength: 3
+    MaxLength: 50
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]$'
+    ConstraintDescription: プロジェクト名は英字で始まり、英数字で終わり、英数字とハイフンのみ使用可能（3-50文字）
+
+  
+  Environment:
+    Type: String
+    Description: 環境名 - リソース分離とタグ付けに使用
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  ConfigurationPattern:
+    Type: String
+    Description: 設定パターン - リソース設定のベースライン決定（必須）
+    AllowedValues: [Basic, Advanced, Enterprise]
+    ConstraintDescription: Basic、Advanced、またはEnterpriseのいずれかを選択してください
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID - EC2インスタンスとセキュリティグループの配置先
+  
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: サブネットIDリスト - 複数AZ配置を推奨（高可用性のため）
+  
+  # ===== Instance Configuration Parameters (Phase 2 - New Structure) =====
+  
+  KeyPairName:
+    Type: String
+    Description: EC2キーペア名 - SSH接続用（オプション）
+    Default: ''
+  
+  InstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: AMI ID - SSMパラメータから自動取得（推奨）
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  
+  # Instance Configuration Override Parameters (Phase 2)
+  CustomInstanceType:
+    Type: String
+    Description: カスタムインスタンスタイプ - ConfigurationPatternのデフォルトをオーバーライド
+    Default: ''
+    AllowedPattern: '^$|^[a-z][0-9][a-z]?\.[a-z0-9]+$'
+    ConstraintDescription: 空文字列または有効なEC2インスタンスタイプ（例：t3.micro、m5.large）を指定してください
+  
+  CustomMinSize:
+    Type: Number
+    Description: カスタム最小サイズ - ConfigurationPatternのデフォルトをオーバーライド（0=未設定）
+    Default: 0
+    MinValue: 0
+    MaxValue: 50
+    ConstraintDescription: 0（未設定）または1-50の範囲で指定してください
+  
+  CustomMaxSize:
+    Type: Number
+    Description: カスタム最大サイズ - ConfigurationPatternのデフォルトをオーバーライド（0=未設定）
+    Default: 0
+    MinValue: 0
+    MaxValue: 100
+    ConstraintDescription: 0（未設定）または1-100の範囲で指定してください
+  
+  CustomDesiredCapacity:
+    Type: Number
+    Description: カスタム希望サイズ - ConfigurationPatternのデフォルトをオーバーライド（0=未設定）
+    Default: 0
+    MinValue: 0
+    MaxValue: 100
+    ConstraintDescription: 0（未設定）または1-100の範囲で指定してください
+  
+  # ===== Feature Control Parameters (Phase 2) =====
+  
+  EnableAutoScaling:
+    Type: String
+    Description: Auto Scaling Groupを有効にする
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  
+  EnableDetailedMonitoring:
+    Type: String
+    Description: 詳細監視を有効にする
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  EnableSpotInstances:
+    Type: String
+    Description: スポットインスタンスを使用する（コスト最適化）
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  SpotMaxPrice:
+    Type: String
+    Description: スポットインスタンスの最大価格
+    Default: '0.05'
+  
+
+  
+  # ===== Advanced/Enterprise Feature Parameters (Phase 2) =====
+  
+  # Storage Configuration
+  RootVolumeSize:
+    Type: Number
+    Description: ルートボリュームサイズ (GB) - Advanced/Enterprise機能
+    Default: 0
+    MinValue: 0
+    MaxValue: 1000
+  
+  RootVolumeType:
+    Type: String
+    Description: ルートボリュームタイプ - Advanced/Enterprise機能
+    Default: ''
+    AllowedValues: ['', 'gp2', 'gp3', 'io1', 'io2']
+  
+  EnableEncryption:
+    Type: String
+    Description: EBSボリューム暗号化を有効にする - Enterprise機能
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  KMSKeyId:
+    Type: String
+    Description: 暗号化用KMSキーID - Enterprise機能（空の場合はデフォルトキー使用）
+    Default: ''
+  
+  # Load Balancer Integration
+  TargetGroupArns:
+    Type: CommaDelimitedList
+    Description: ターゲットグループARNリスト - Advanced/Enterprise機能
+    Default: ''
+  
+  # Advanced Instance Configuration
+  EnableMixedInstancesPolicy:
+    Type: String
+    Description: 混合インスタンスポリシーを有効にする - Enterprise機能
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+  InstanceTypes:
+    Type: CommaDelimitedList
+    Description: 混合インスタンスポリシー用インスタンスタイプリスト - Enterprise機能
+    Default: ''
+  
+  EnableNitroEnclave:
+    Type: String
+    Description: Nitro Enclaveを有効にする - Enterprise機能
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  
+
+
+Rules:
+  # ===== Parameter Validation Rules (Phase 3) =====
+  
+  ValidateCustomSizing:
+    RuleCondition: !Or
+      - !Not [!Equals [!Ref CustomMinSize, 0]]
+      - !Not [!Equals [!Ref CustomMaxSize, 0]]
+      - !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+    Assertions:
+      - Assert: !And
+          - !Not [!Equals [!Ref CustomMinSize, 0]]
+          - !Not [!Equals [!Ref CustomMaxSize, 0]]
+          - !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+        AssertDescription: カスタムサイジングパラメータを使用する場合は、CustomMinSize、CustomMaxSize、CustomDesiredCapacityをすべて指定してください
+  
+  ValidateEnterpriseFeatures:
+    RuleCondition: !Not [!Equals [!Ref ConfigurationPattern, Enterprise]]
+    Assertions:
+      - Assert: !Equals [!Ref EnableNitroEnclave, 'false']
+        AssertDescription: Nitro EnclaveはEnterpriseパターンでのみ使用可能です
+      - Assert: !Equals [!Ref EnableMixedInstancesPolicy, 'false']
+        AssertDescription: 混合インスタンスポリシーはEnterpriseパターンでのみ使用可能です
+  
+  ValidateAdvancedFeatures:
+    RuleCondition: !Equals [!Ref ConfigurationPattern, Basic]
+    Assertions:
+      - Assert: !Equals [!Ref EnableSpotInstances, 'false']
+        AssertDescription: スポットインスタンスはAdvanced/Enterpriseパターンでのみ使用可能です
+      - Assert: !Equals [!Ref EnableDetailedMonitoring, 'false']
+        AssertDescription: 詳細監視はAdvanced/Enterpriseパターンでのみ推奨されます
+
+Conditions:
+  # ===== Basic Feature Conditions =====
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
+  EnableMonitoring: !Equals [!Ref EnableDetailedMonitoring, 'true']
+  UseSpotInstances: !Equals [!Ref EnableSpotInstances, 'true']
+  CreateAutoScalingGroup: !Equals [!Ref EnableAutoScaling, 'true']
+  
+  # ===== Parameter Override Conditions (Phase 3 - Clean Implementation) =====
+  HasCustomInstanceType: !Not [!Equals [!Ref CustomInstanceType, '']]
+  HasCustomMinSize: !Not [!Equals [!Ref CustomMinSize, 0]]
+  HasCustomMaxSize: !Not [!Equals [!Ref CustomMaxSize, 0]]
+  HasCustomDesiredCapacity: !Not [!Equals [!Ref CustomDesiredCapacity, 0]]
+  
+  
+  # ===== Pattern Resolution Conditions (Phase 3 - Clean Implementation) =====
+  # Determine effective configuration pattern using only new parameter structure
+  UseBasicPattern: !Equals [!Ref ConfigurationPattern, Basic]
+  UseAdvancedPattern: !Equals [!Ref ConfigurationPattern, Advanced]
+  UseEnterprisePattern: !Equals [!Ref ConfigurationPattern, Enterprise]
+  
+  # ===== Parameter Override Logic (Phase 3 - Clean Implementation) =====
+  # Use custom parameters when provided, otherwise use pattern-based defaults
+  UseCustomInstanceType: !Condition HasCustomInstanceType
+  UseCustomMinSize: !Condition HasCustomMinSize
+  UseCustomMaxSize: !Condition HasCustomMaxSize
+  UseCustomDesiredCapacity: !Condition HasCustomDesiredCapacity
+  
+  # ===== Advanced/Enterprise Feature Conditions (Phase 2) =====
+  IsAdvancedPattern: !Condition UseAdvancedPattern
+  IsEnterprisePattern: !Condition UseEnterprisePattern
+  IsAdvancedOrEnterprise: !Or [!Condition IsAdvancedPattern, !Condition IsEnterprisePattern]
+  
+  # Storage Configuration Conditions
+  HasCustomRootVolumeSize: !Not [!Equals [!Ref RootVolumeSize, 0]]
+  HasCustomRootVolumeType: !Not [!Equals [!Ref RootVolumeType, '']]
+  EnableEBSEncryption: !And [!Equals [!Ref EnableEncryption, 'true'], !Condition IsEnterprisePattern]
+  HasCustomKMSKey: !Not [!Equals [!Ref KMSKeyId, '']]
+  
+  # Load Balancer Integration Conditions
+  HasTargetGroups: !Not [!Equals [!Join ['', !Ref TargetGroupArns], '']]
+  UseTargetGroups: !Condition HasTargetGroups
+  
+  # Advanced Instance Configuration Conditions
+  UseMixedInstancesPolicy: !And [!Equals [!Ref EnableMixedInstancesPolicy, 'true'], !Condition IsEnterprisePattern]
+  UseNitroEnclave: !And [!Equals [!Ref EnableNitroEnclave, 'true'], !Condition IsEnterprisePattern]
+  
+
+
+Mappings:
+  InstanceTypePatterns:
+    Basic:
+      PrimaryType: t3.micro
+      SecondaryType: t3.small
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      RootVolumeSize: 8
+      RootVolumeType: gp2
+      EnableEncryption: false
+      EnableDetailedMonitoring: false
+      EnableSpotInstances: false
+    Advanced:
+      PrimaryType: t3.medium
+      SecondaryType: m5.large
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      RootVolumeSize: 20
+      RootVolumeType: gp3
+      EnableEncryption: true
+      EnableDetailedMonitoring: true
+      EnableSpotInstances: true
+    Enterprise:
+      PrimaryType: m5.large
+      SecondaryType: m5.xlarge
+      MinSize: 3
+      MaxSize: 10
+      DesiredCapacity: 3
+      RootVolumeSize: 50
+      RootVolumeType: gp3
+      EnableEncryption: true
+      EnableDetailedMonitoring: true
+      EnableSpotInstances: false
+  
+  # EnvironmentSettings (コメントアウト - 未使用のため)
+  # EnvironmentSettings:
+  #   dev:
+  #     InstanceProfile: EC2-Dev-InstanceProfile
+  #     SecurityGroupSuffix: dev
+  #     EnableTerminationProtection: 'false'
+  #   staging:
+  #     InstanceProfile: EC2-Staging-InstanceProfile
+  #     SecurityGroupSuffix: staging
+  #     EnableTerminationProtection: 'false'
+  #   prod:
+  #     InstanceProfile: EC2-Prod-InstanceProfile
+  #     SecurityGroupSuffix: prod
+  #     EnableTerminationProtection: 'true'
+
+Resources:
+  # IAM Role for EC2 instances
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-EC2-Role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: EC2BasicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeTags
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-EC2-Role'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Instance Profile
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-EC2-InstanceProfile'
+      Roles:
+        - !Ref EC2Role
+
+  # Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-EC2-SG'
+      GroupDescription: !Sub 'Security Group for ${ProjectName} EC2 instances in ${Environment}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/8
+          Description: SSH access from VPC
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: HTTP from ALB
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: HTTPS from ALB
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-EC2-SG'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ALB Security Group
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-ALB-SG'
+      GroupDescription: !Sub 'Security Group for ${ProjectName} ALB in ${Environment}'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from internet
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ALB-SG'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Launch Template
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ProjectName}-${Environment}-LaunchTemplate'
+      LaunchTemplateData:
+        ImageId: !Ref InstanceAMI
+        InstanceType: !If 
+          - UseCustomInstanceType
+          - !Ref CustomInstanceType
+          - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, PrimaryType], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, PrimaryType], !FindInMap [InstanceTypePatterns, Enterprise, PrimaryType]]]
+        KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+        IamInstanceProfile:
+          Arn: !GetAtt EC2InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        Monitoring:
+          Enabled: !If [EnableMonitoring, true, false]
+        InstanceMarketOptions: !If
+          - UseSpotInstances
+          - MarketType: spot
+            SpotOptions:
+              MaxPrice: !Ref SpotMaxPrice
+              SpotInstanceType: one-time
+          - !Ref 'AWS::NoValue'
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !If 
+                - HasCustomRootVolumeSize
+                - !Ref RootVolumeSize
+                - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, RootVolumeSize], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, RootVolumeSize], !FindInMap [InstanceTypePatterns, Enterprise, RootVolumeSize]]]
+              VolumeType: !If 
+                - HasCustomRootVolumeType
+                - !Ref RootVolumeType
+                - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, RootVolumeType], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, RootVolumeType], !FindInMap [InstanceTypePatterns, Enterprise, RootVolumeType]]]
+              Encrypted: !If [EnableEBSEncryption, true, false]
+              KmsKeyId: !If [HasCustomKMSKey, !Ref KMSKeyId, !Ref 'AWS::NoValue']
+              DeleteOnTermination: true
+        EbsOptimized: !If [IsAdvancedOrEnterprise, true, false]
+        EnclaveOptions: !If
+          - UseNitroEnclave
+          - Enabled: true
+          - !Ref 'AWS::NoValue'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y amazon-cloudwatch-agent
+            
+            # CloudWatch Agent設定
+            cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOF'
+            {
+              "metrics": {
+                "namespace": "${ProjectName}/${Environment}",
+                "metrics_collected": {
+                  "cpu": {
+                    "measurement": ["cpu_usage_idle", "cpu_usage_iowait", "cpu_usage_user", "cpu_usage_system"],
+                    "metrics_collection_interval": 60
+                  },
+                  "disk": {
+                    "measurement": ["used_percent"],
+                    "metrics_collection_interval": 60,
+                    "resources": ["*"]
+                  },
+                  "mem": {
+                    "measurement": ["mem_used_percent"],
+                    "metrics_collection_interval": 60
+                  }
+                }
+              },
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/messages",
+                        "log_group_name": "/aws/ec2/${ProjectName}/${Environment}/system",
+                        "log_stream_name": "{instance_id}/messages"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            EOF
+            
+            # CloudWatch Agent開始
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config -m ec2 -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-Instance'
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectName
+              - Key: LaunchedBy
+                Value: AutoScaling
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub '${ProjectName}-${Environment}-Volume'
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectName
+
+  # Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: CreateAutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub '${ProjectName}-${Environment}-ASG'
+      LaunchTemplate: !If
+        - UseMixedInstancesPolicy
+        - !Ref 'AWS::NoValue'
+        - LaunchTemplateId: !Ref EC2LaunchTemplate
+          Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      MixedInstancesPolicy: !If
+        - UseMixedInstancesPolicy
+        - LaunchTemplate:
+            LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref EC2LaunchTemplate
+              Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+            Overrides:
+              - InstanceType: !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, PrimaryType], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, PrimaryType], !FindInMap [InstanceTypePatterns, Enterprise, PrimaryType]]]
+              - InstanceType: !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, SecondaryType], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, SecondaryType], !FindInMap [InstanceTypePatterns, Enterprise, SecondaryType]]]
+          InstancesDistribution:
+            OnDemandBaseCapacity: 1
+            OnDemandPercentageAboveBaseCapacity: 50
+            SpotAllocationStrategy: diversified
+        - !Ref 'AWS::NoValue'
+      MinSize: !If 
+        - UseCustomMinSize
+        - !Ref CustomMinSize
+        - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, MinSize], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, MinSize], !FindInMap [InstanceTypePatterns, Enterprise, MinSize]]]
+      MaxSize: !If 
+        - UseCustomMaxSize
+        - !Ref CustomMaxSize
+        - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, MaxSize], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, MaxSize], !FindInMap [InstanceTypePatterns, Enterprise, MaxSize]]]
+      DesiredCapacity: !If 
+        - UseCustomDesiredCapacity
+        - !Ref CustomDesiredCapacity
+        - !If [UseBasicPattern, !FindInMap [InstanceTypePatterns, Basic, DesiredCapacity], !If [UseAdvancedPattern, !FindInMap [InstanceTypePatterns, Advanced, DesiredCapacity], !FindInMap [InstanceTypePatterns, Enterprise, DesiredCapacity]]]
+      # DefaultCooldown: 300
+      VPCZoneIdentifier: !Ref SubnetIds
+      HealthCheckType: !If [UseTargetGroups, ELB, EC2]
+      HealthCheckGracePeriod: 300
+      TerminationPolicies:
+        - OldestInstance
+      TargetGroupARNs: !If
+        - UseTargetGroups
+        - !Ref TargetGroupArns
+        - !Ref 'AWS::NoValue'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ASG'
+          PropagateAtLaunch: false
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+        - Key: Project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        WaitOnResourceSignals: false
+
+  # CloudWatch Log Group
+  EC2LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ec2/${ProjectName}/${Environment}/system'
+      RetentionInDays: !If [IsProduction, 90, 30]
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  # Auto Scaling Group Outputs
+  AutoScalingGroupName:
+    Condition: CreateAutoScalingGroup
+    Description: Auto Scaling Group名
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ASG-Name'
+  
+  AutoScalingGroupArn:
+    Condition: CreateAutoScalingGroup
+    Description: Auto Scaling Group ARN
+    Value: !Sub 'arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ASG-Arn'
+  
+  # Launch Template Outputs
+  LaunchTemplateId:
+    Description: Launch Template ID
+    Value: !Ref EC2LaunchTemplate
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LaunchTemplate-Id'
+
+  LaunchTemplateVersion:
+    Description: Launch Template Latest Version
+    Value: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LaunchTemplate-Version'
+  
+  # Security Group Outputs
+  EC2SecurityGroupId:
+    Description: EC2 Security Group ID
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2-SG-Id'
+  
+  ALBSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ALB-SG-Id'
+  
+  # IAM Outputs
+  IAMRoleArn:
+    Description: EC2 IAM Role ARN
+    Value: !GetAtt EC2Role.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-IAM-Role-Arn'
+
+  InstanceProfileArn:
+    Description: EC2 Instance Profile ARN
+    Value: !GetAtt EC2InstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-InstanceProfile-Arn'
+
+  # CloudWatch Logs Output
+  EC2LogGroupName:
+    Description: EC2 Log Group Name
+    Value: !Ref EC2LogGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2-LogGroup-Name'

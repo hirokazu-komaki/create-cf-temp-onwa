@@ -1,23 +1,22 @@
 {
   "Parameters": {
-    "InstancePattern": "Enterprise",
+    "ConfigurationPattern": "Enterprise",
     "ProjectName": "EnterpriseApp",
     "Environment": "prod",
-    "InstanceType": "m5.large",
-    "AMIId": "ami-0abcdef1234567890",
+    "CustomInstanceType": "m5.large",
+    "InstanceAMI": "ami-0abcdef1234567890",
     "KeyPairName": "enterprise-prod-keypair",
     "VpcId": "vpc-enterprise123",
     "SubnetIds": ["subnet-prod1", "subnet-prod2", "subnet-prod3"],
     "EnableDetailedMonitoring": "true",
     "EnableAutoScaling": "true",
-    "MinSize": 3,
-    "MaxSize": 12,
-    "DesiredCapacity": 3,
+    "CustomMinSize": 3,
+    "CustomMaxSize": 12,
+    "CustomDesiredCapacity": 3,
     "TargetGroupArns": [
       "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web-targets/1234567890123456",
       "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/api-targets/1234567890123457"
     ],
-    "EnableEBSOptimization": "true",
     "RootVolumeSize": 50,
     "RootVolumeType": "gp3",
     "EnableEncryption": "true",
@@ -25,10 +24,7 @@
     "EnableNitroEnclave": "true",
     "EnableSpotInstances": "false",
     "EnableMixedInstancesPolicy": "true",
-    "InstanceTypes": ["m5.large", "m5.xlarge", "m4.large"],
-    "EnableSystemsManagerAgent": "true",
-    "EnableCloudWatchAgent": "true",
-    "EnableXRayTracing": "true"
+    "InstanceTypes": ["m5.large", "m5.xlarge", "m4.large"]
   },
   "Tags": {
     "Owner": "Platform Team",

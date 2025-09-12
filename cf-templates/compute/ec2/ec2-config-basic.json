@@ -1,18 +1,18 @@
 {
   "Parameters": {
-    "InstancePattern": "Basic",
+    "ConfigurationPattern": "Basic",
     "ProjectName": "MyApp",
     "Environment": "dev",
-    "InstanceType": "t3.micro",
-    "AMIId": "ami-0228232d282f16465",
+    "CustomInstanceType": "t3.micro",
+    "InstanceAMI": "ami-0228232d282f16465",
     "KeyPairName": "my-dev-keypair",
     "VpcId": "vpc-0eaf2cdc55cae20d5",
     "SubnetIds": ["subnet-04590383ce70d10ad", "subnet-062d1f6a49865334a"],
     "EnableDetailedMonitoring": "false",
     "EnableAutoScaling": "false",
-    "MinSize": 1,
-    "MaxSize": 1,
-    "DesiredCapacity": 1
+    "CustomMinSize": 1,
+    "CustomMaxSize": 1,
+    "CustomDesiredCapacity": 1
   },
   "Tags": {
     "Owner": "Development Team",

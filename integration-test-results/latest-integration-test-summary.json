@@ -1,0 +1,68 @@
+{
+  "test_session": {
+    "timestamp": "20250912_170510",
+    "total_tests": 5,
+    "passed_tests": 2,
+    "failed_tests": 3,
+    "success_rate": 40.0,
+    "total_execution_time": 29.9865665435791,
+    "overall_success": false
+  },
+  "test_results": {
+    "ci_cd_integration": {
+      "test_name": "ci_cd_integration",
+      "description": "CI/CD統合テスト",
+      "success": false,
+      "execution_time": 10.254699230194092,
+      "return_code": 1,
+      "stdout": "🚀 CI/CD統合テスト開始\n================================================================================\nℹ️  GitHub Actionsワークフローファイルを検証中...\nℹ️  検証対象ワークフロー: ['ci-cd-pipeline-single-account.yml']\n✅ ワークフロー ci-cd-pipeline-single-account.yml の基本構造は正常です\nℹ️  ワークフロージョブの依存関係を検証中...\n✅ ジョブ 'validate-and-map' の依存関係は正常です\n✅ ジョブ 'test-templates' の依存関係は正常です\n✅ ジョブ 'request-deployment-approval' の依存関係は正常です\n✅ ジョブ 'deploy-to-aws' の依存関係は正常です\nℹ️  デプロイメントプロセスを検証中...\n✅ 設定ファイル basic の検証が完了\n✅ 設定ファイル advanced の検証が完了\n✅ 設定ファイル enterprise の検証が完了\nℹ️  CloudFormationテンプレートを検証中...\n✅ AWS CloudFormationテンプレート検証が成功\nℹ️  CloudFormation Change Set作成をテスト中...\n✅ basic: Change Set作成が成功\n✅ advanced: Change Set作成が成功\n✅ enterprise: Change Set作成が成功\nℹ️  監視とログ設定を検証中...\n✅ CloudWatch監視リソースが定義されています: ['HighCPUAlarm', 'LowCPUAlarm', 'MonitoringDashboard']\n⚠️  Auto Scaling通知設定が見つかりません\n✅ IAMロールが定義されています: ['EC2Role']\n✅ IAMロール EC2Role にCloudWatchログ権限が設定されています\n✅ セキュリティグループが定義されています: ['EC2SecurityGroup', 'ALBSecurityGroup']\nℹ️  環境固有のデプロイメント設定をテスト中...\n✅ basic: 環境固有設定の検証が完了\n✅ advanced: 環境固有設定の検証が完了\n✅ enterprise: 環境固有設定の検証が完了\n\n================================================================================\n📊 CI/CD統合テスト結果\n================================================================================\n\ngithub_actions_workflow: ❌ FAIL\n  - ci-cd-pipeline-single-account.yml: 適切なトリガーが設定されていません\n\nworkflow_job_dependencies: ✅ PASS\n\ndeployment_process: ✅ PASS\n\ncloudformation_validation: ❌ FAIL\n  - cfn-lint重要エラー: W1001 Ref to resource 'AutoScalingGroup' that may not be available when condition 'CreateAutoScalingGroup' is False and when condition 'IsAdvancedOrEnterprise' is True at Resources/MonitoringDashboard/Properties/DashboardBody\n/home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/cf-templates/compute/ec2/ec2-autoscaling.yaml:693:7\n\n\n\nchangeset_creation: ✅ PASS\n\nmonitoring_logging: ✅ PASS\n\nenvironment_specific_deployment: ✅ PASS\n\n================================================================================\n❌ 一部のCI/CD統合テストが失敗しました\n上記の問題を解決してから再実行してください\n================================================================================\n\n📄 詳細結果を保存しました: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/ci-cd-integration-test-results.json\n",
+      "stderr": "",
+      "timestamp": "2025-09-12T17:05:21.495876"
+    },
+    "github_actions_workflow": {
+      "test_name": "github_actions_workflow",
+      "description": "GitHub Actionsワークフロー検証",
+      "success": true,
+      "execution_time": 0.08348822593688965,
+      "return_code": 0,
+      "stdout": "🚀 GitHub Actionsワークフロー検証開始\n================================================================================\nℹ️  発見されたワークフローファイル: 1\nℹ️  検証中: ci-cd-pipeline-single-account.yml\n------------------------------------------------------------\n✅ YAML構文検証成功: ci-cd-pipeline-single-account.yml\n\n================================================================================\n📊 GitHub Actionsワークフロー検証結果\n================================================================================\n\n📄 ci-cd-pipeline-single-account.yml: ✅\n  yaml_syntax: ✅\n  workflow_structure: ✅\n\n================================================================================\n✅ すべてのワークフロー検証が成功しました\n================================================================================\n\n📄 詳細結果を保存しました: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/github-actions-validation-results.json\n",
+      "stderr": "",
+      "timestamp": "2025-09-12T17:05:21.579475"
+    },
+    "deployment_process": {
+      "test_name": "deployment_process",
+      "description": "デプロイメントプロセス検証",
+      "success": false,
+      "execution_time": 0.3757197856903076,
+      "return_code": 1,
+      "stdout": "🚀 デプロイメントプロセス検証開始\n================================================================================\nℹ️  AWS認証情報を検証中...\n✅ AWS認証成功 - Account: 432423717699\nℹ️  User ARN: arn:aws:iam::432423717699:user/Wani_worked\nℹ️  CloudFormation権限を検証中...\nℹ️  テンプレートとパラメータファイルの互換性を検証中...\n✅ basic: パラメータ互換性確認成功\n✅ advanced: パラメータ互換性確認成功\n✅ enterprise: パラメータ互換性確認成功\n\n================================================================================\n📊 デプロイメントプロセス検証結果\n================================================================================\n\naws_credentials: ✅ PASS\n  メッセージ: AWS認証成功 - Account: 432423717699\n\ncloudformation_permissions: ❌ FAIL\n  メッセージ: 予期しないエラー: Parameter validation failed:\nUnknown parameter in input: \"MaxItems\", must be one of: NextToken, StackStatusFilter\n\ntemplate_parameter_compatibility: ✅ PASS\n\ndry_run_deployment: ❌ FAIL\n  メッセージ: スキップ\n\nresource_dependencies: ❌ FAIL\n  メッセージ: リソース依存関係検証エラー: テンプレート解析が必要\n\nsecurity_configuration: ❌ FAIL\n  メッセージ: セキュリティ設定検証エラー: テンプレート解析が必要\n\n================================================================================\n❌ 一部のデプロイメント検証が失敗しました\n上記の問題を解決してからデプロイメントを実行してください\n================================================================================\n\n📄 詳細結果を保存しました: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/deployment-process-validation-results.json\n",
+      "stderr": "",
+      "timestamp": "2025-09-12T17:05:21.955274"
+    },
+    "monitoring_logging": {
+      "test_name": "monitoring_logging",
+      "description": "監視・ログ設定検証",
+      "success": true,
+      "execution_time": 0.24717020988464355,
+      "return_code": 0,
+      "stdout": "🚀 監視・ログ設定検証開始\n================================================================================\nℹ️  CloudWatchリソースを検証中...\nℹ️  CloudWatchリソースを検証中...\n✅ CloudWatchアラームが定義されています: ['HighCPUAlarm', 'LowCPUAlarm']\n✅ CloudWatchダッシュボードが定義されています: ['MonitoringDashboard']\nℹ️  設定パターン別監視設定を検証中...\nℹ️  設定パターン別監視設定を検証中...\n⚠️  basic: ログレベルタグが設定されていません\n✅ basic: パターン別監視設定の検証完了\n⚠️  advanced: ログレベルタグが設定されていません\n✅ advanced: パターン別監視設定の検証完了\n⚠️  enterprise: ログレベルタグが設定されていません\n✅ enterprise: パターン別監視設定の検証完了\n\n================================================================================\n📊 監視・ログ設定検証結果\n================================================================================\n\ncloudwatch_resources: ✅ PASS\n\nconfiguration_pattern_monitoring: ✅ PASS\n\nauto_scaling_monitoring: ❌ FAIL\n  - Auto Scaling監視設定検証エラー: テンプレート解析が必要\n\niam_logging_permissions: ❌ FAIL\n  - IAMログ権限検証エラー: テンプレート解析が必要\n\nsns_notification_setup: ❌ FAIL\n  - SNS通知設定検証エラー: テンプレート解析が必要\n\nlog_aggregation_retention: ❌ FAIL\n  - ログ集約・保持設定検証エラー: テンプレート解析が必要\n\nmonitoring_endpoints_connectivity: ❌ FAIL\n  - スキップ\n\n================================================================================\n✅ すべての監視・ログ設定検証が成功しました\n================================================================================\n\n📄 詳細結果を保存しました: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/monitoring-logging-validation-results.json\n",
+      "stderr": "",
+      "timestamp": "2025-09-12T17:05:22.202638"
+    },
+    "phase3_final_validation": {
+      "test_name": "phase3_final_validation",
+      "description": "Phase 3最終検証",
+      "success": false,
+      "execution_time": 19.02548909187317,
+      "return_code": 1,
+      "stdout": "🚀 Starting Phase 3 Final Validation\n================================================================================\n\n📋 Template Validation\n----------------------------------------\n🔍 CloudFormation テンプレート構文を検証中...\n✅ AWS CLI YAMLヘルパーによる構文解析が成功しました\n🔍 Running cfn-lint validation...\n\n============================================================\n🧪 Testing BASIC Configuration Pattern\n============================================================\n🔍 Validating basic parameter structure...\n🔍 Validating basic pattern consistency...\n🔍 Validating resource configuration for basic...\n🔍 Testing changeset creation for basic...\n\n============================================================\n🧪 Testing ADVANCED Configuration Pattern\n============================================================\n🔍 Validating advanced parameter structure...\n🔍 Validating advanced pattern consistency...\n🔍 Validating resource configuration for advanced...\n🔍 Testing changeset creation for advanced...\n\n============================================================\n🧪 Testing ENTERPRISE Configuration Pattern\n============================================================\n🔍 Validating enterprise parameter structure...\n🔍 Validating enterprise pattern consistency...\n🔍 Validating resource configuration for enterprise...\n🔍 Testing changeset creation for enterprise...\n\n================================================================================\n📊 PHASE 3 FINAL VALIDATION RESULTS\n================================================================================\n\n📋 Template Validation Results:\n  syntax: ✅ PASS\n  cfn_lint: ❌ FAIL\n    Error: cfn-lint critical errors: W1001 Ref to resource 'AutoScalingGroup' that may not be available when condition 'CreateAutoScalingGroup' is False and when condition 'IsAdvancedOrEnterprise' is True at Resources/MonitoringDashboard/Properties/DashboardBody\n/home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/cf-templates/compute/ec2/ec2-autoscaling.yaml:693:7\n\n\n\n🧪 Configuration Pattern Test Results:\n\n  BASIC: ✅ PASS\n    parameter_structure: ✅\n    pattern_consistency: ✅\n    resource_configuration: ✅\n    changeset_creation: ✅\n\n  ADVANCED: ✅ PASS\n    parameter_structure: ✅\n    pattern_consistency: ✅\n    resource_configuration: ✅\n    changeset_creation: ✅\n\n  ENTERPRISE: ✅ PASS\n    parameter_structure: ✅\n    pattern_consistency: ✅\n    resource_configuration: ✅\n    changeset_creation: ✅\n\n================================================================================\n❌ SOME TESTS FAILED - Issues need to be resolved\nPlease review the failed tests above and fix the issues\n================================================================================\n\n📄 Detailed results saved to: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/phase3-validation-results.json\n",
+      "stderr": "",
+      "timestamp": "2025-09-12T17:05:41.228219"
+    }
+  },
+  "environment_info": {
+    "python_version": "3.12.11",
+    "platform": "linux",
+    "working_directory": "/home/hirokazu-niwa/kiro-project/create-cf-temp-onwa"
+  }
+}

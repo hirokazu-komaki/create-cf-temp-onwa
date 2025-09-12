@@ -1,0 +1,10 @@
+{
+  "test_name": "monitoring_logging",
+  "description": "監視・ログ設定検証",
+  "success": false,
+  "execution_time": 0.24684691429138184,
+  "return_code": 1,
+  "stdout": "🚀 監視・ログ設定検証開始\n================================================================================\nℹ️  CloudWatchリソースを検証中...\nℹ️  CloudWatchリソースを検証中...\n⚠️  CloudWatchダッシュボードが定義されていません\nℹ️  設定パターン別監視設定を検証中...\nℹ️  設定パターン別監視設定を検証中...\n⚠️  basic: ログレベルタグが設定されていません\n✅ basic: パターン別監視設定の検証完了\n⚠️  advanced: ログレベルタグが設定されていません\n✅ advanced: パターン別監視設定の検証完了\n⚠️  enterprise: ログレベルタグが設定されていません\n✅ enterprise: パターン別監視設定の検証完了\n\n================================================================================\n📊 監視・ログ設定検証結果\n================================================================================\n\ncloudwatch_resources: ❌ FAIL\n  - CloudWatchアラームが定義されていません\n\nconfiguration_pattern_monitoring: ✅ PASS\n\nauto_scaling_monitoring: ❌ FAIL\n  - Auto Scaling監視設定検証エラー: テンプレート解析が必要\n\niam_logging_permissions: ❌ FAIL\n  - IAMログ権限検証エラー: テンプレート解析が必要\n\nsns_notification_setup: ❌ FAIL\n  - SNS通知設定検証エラー: テンプレート解析が必要\n\nlog_aggregation_retention: ❌ FAIL\n  - ログ集約・保持設定検証エラー: テンプレート解析が必要\n\nmonitoring_endpoints_connectivity: ❌ FAIL\n  - スキップ\n\n================================================================================\n❌ 一部の監視・ログ設定検証が失敗しました\n上記の問題を解決してから本番環境にデプロイしてください\n================================================================================\n\n📄 詳細結果を保存しました: /home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/monitoring-logging-validation-results.json\n",
+  "stderr": "",
+  "timestamp": "2025-09-12T16:52:21.432126"
+}

@@ -469,6 +469,8 @@ jobs:
     needs: [validate-and-map, test-templates, request-deployment-approval]
     if: |
       always() && 
+      needs.validate-and-map.result == 'success' &&
+      needs.test-templates.result == 'success' &&
       needs.request-deployment-approval.result == 'success'
     strategy:
       matrix:

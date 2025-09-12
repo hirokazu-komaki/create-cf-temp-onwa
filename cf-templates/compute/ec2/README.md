@@ -71,17 +71,39 @@ aws cloudformation create-stack \
 ## パラメータ説明
 
 ### 必須パラメータ
-- **ProjectName**: プロジェクト名
+- **ProjectName**: プロジェクト名（3-50文字、英字で始まり英数字で終わる）
+- **ConfigurationPattern**: 設定パターン (Basic/Advanced/Enterprise)
 - **Environment**: 環境名 (dev/staging/prod)
 - **VpcId**: VPC ID
 - **SubnetIds**: サブネットIDリスト
 
-### オプションパラメータ
-- **ConfigurationPattern**: 設定パターン (Basic/Advanced/Enterprise)
-- **KeyPairName**: EC2キーペア名
+### コアインフラストラクチャパラメータ
+- **InstanceAMI**: AMI ID（SSMパラメータ推奨）
+- **KeyPairName**: EC2キーペア名（オプション）
+
+### カスタムオーバーライドパラメータ
+- **CustomInstanceType**: インスタンスタイプのオーバーライド
+- **CustomMinSize**: Auto Scaling Group最小サイズのオーバーライド
+- **CustomMaxSize**: Auto Scaling Group最大サイズのオーバーライド
+- **CustomDesiredCapacity**: Auto Scaling Group希望サイズのオーバーライド
+
+### 機能制御パラメータ
+- **EnableAutoScaling**: Auto Scaling Groupの有効化
 - **EnableDetailedMonitoring**: 詳細監視の有効化
 - **EnableSpotInstances**: スポットインスタンスの使用
 - **SpotMaxPrice**: スポットインスタンスの最大価格
+
+### 高度な機能パラメータ（Advanced/Enterprise）
+- **RootVolumeSize**: ルートボリュームサイズ
+- **RootVolumeType**: ルートボリュームタイプ
+- **EnableEncryption**: EBSボリューム暗号化
+- **KMSKeyId**: 暗号化用KMSキーID
+- **TargetGroupArns**: ターゲットグループARNリスト
+
+### エンタープライズ機能パラメータ（Enterprise）
+- **EnableMixedInstancesPolicy**: 混合インスタンスポリシー
+- **InstanceTypes**: 混合インスタンスポリシー用インスタンスタイプリスト
+- **EnableNitroEnclave**: Nitro Enclaveの有効化
 
 ## Well-Architected Framework準拠項目
 
@@ -185,9 +207,43 @@ aws ec2 get-console-output --instance-id i-1234567890abcdef0
 - **IAM**: `cf-templates/foundation/iam/`
 - **CloudWatch**: `cf-templates/integration/cloudwatch/`
 
+## パラメータ移行について
+
+**重要**: Phase 3の完了により、レガシーパラメータのサポートが終了しました。
+
+### 移行が必要なパラメータ
+
+| 旧パラメータ | 新パラメータ | 備考 |
+|---|---|---|
+| `InstancePattern` | `ConfigurationPattern` | 必須パラメータ |
+| `AMIId` | `InstanceAMI` | - |
+| `InstanceType` | `CustomInstanceType` | オーバーライド用 |
+| `MinSize` | `CustomMinSize` | オーバーライド用 |
+| `MaxSize` | `CustomMaxSize` | オーバーライド用 |
+| `DesiredCapacity` | `CustomDesiredCapacity` | オーバーライド用 |
+| `TargetGroupArn` | `TargetGroupArns` | 配列形式 |
+| `EnableEBSOptimization` | （削除） | パターンベースで自動設定 |
+
+### 移行手順
+
+1. **設定ファイルの更新**: 上記の対応表に従ってパラメータ名を変更
+2. **必須パラメータの追加**: `ProjectName`と`ConfigurationPattern`を必須で設定
+3. **検証の実行**: `aws cloudformation validate-template`で構文確認
+4. **テストデプロイ**: 新しい設定でのドライラン実行
+
+詳細な移行手順については、[MIGRATION-GUIDE.md](./MIGRATION-GUIDE.md) を参照してください。
+
 ## 更新履歴
 
-- v1.0: 初期リリース
+- v3.0: Phase 3完了 - レガシーパラメータサポート終了
+  - 統一されたパラメータ構造
+  - 強化されたパラメータ検証
+  - 包括的な移行ガイド
+- v2.0: Phase 2完了 - 新パラメータ構造導入
+  - 後方互換性を保持した新パラメータ
+  - パターンベースのデフォルト値
+  - Advanced/Enterprise機能の追加
+- v1.0: Phase 1完了 - 後方互換性確保
   - 基本的なAuto Scaling機能
   - Well-Architected Framework準拠
   - コスト最適化機能

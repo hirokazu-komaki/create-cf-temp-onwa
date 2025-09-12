@@ -7,7 +7,15 @@ CloudFormation CI/CD パイプライン テストスクリプト
 """
 
 import json
-import yaml
+
+# CloudFormation対応のYAMLパーサーを使用
+try:
+    from awscli.customizations.cloudformation.yamlhelper import yaml_parse
+except ImportError:
+    # フォールバック: 標準のyamlを使用
+    import yaml
+    def yaml_parse(content):
+        return yaml.safe_load(content)
 import os
 import sys
 import argparse
@@ -194,8 +202,11 @@ class PipelineTester:
         """CloudFormationテンプレートの構文検証"""
         try:
             # YAMLファイルの読み込みテスト
-            with open(template_file, 'r', encoding='utf-8') as f:
-                template = yaml.safe_load(f)
+            with open(template_file, \'r\', encoding=\'utf-8\') as f:
+
+                content = f.read()
+
+                template = yaml_parse(content)
             
             # 基本構造の確認
             if not isinstance(template, dict):
@@ -238,8 +249,11 @@ class PipelineTester:
     def check_well_architected_compliance(self, template_file: Path) -> Dict[str, List[str]]:
         """Well-Architected Framework準拠チェック"""
         try:
-            with open(template_file, 'r', encoding='utf-8') as f:
-                template = yaml.safe_load(f)
+            with open(template_file, \'r\', encoding=\'utf-8\') as f:
+
+                content = f.read()
+
+                template = yaml_parse(content)
             
             metadata = template.get('Metadata', {})
             wa_compliance = metadata.get('WellArchitectedCompliance', {})

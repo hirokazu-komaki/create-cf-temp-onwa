@@ -1,0 +1,10 @@
+{
+  "test_name": "github_actions_workflow",
+  "description": "GitHub Actionsワークフロー検証",
+  "success": false,
+  "execution_time": 0.00859212875366211,
+  "return_code": 1,
+  "stdout": "",
+  "stderr": "  File \"/home/hirokazu-niwa/kiro-project/create-cf-temp-onwa/scripts/github-actions-workflow-validator.py\", line 97\n    with open(workflow_file, \\'r\\', encoding=\\'utf-8\\') as f:\n                              ^\nSyntaxError: unexpected character after line continuation character\n",
+  "timestamp": "2025-09-12T16:27:39.215380"
+}

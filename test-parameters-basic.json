@@ -1,0 +1,20 @@
+{
+  "Parameters": {
+    "ConfigurationPattern": "Basic",
+    "ProjectName": "MyApp",
+    "Environment": "dev",
+    "InstanceAMI": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2",
+    "KeyPairName": "my-dev-keypair",
+    "VpcId": "vpc-0eaf2cdc55cae20d5",
+    "SubnetIds": "subnet-04590383ce70d10ad,subnet-062d1f6a49865334a",
+    "EnableAutoScaling": "false"
+  },
+  "Tags": {
+    "Project": "MyApp",
+    "Owner": "Development Team",
+    "CostCenter": "Engineering",
+    "Environment": "Development",
+    "WellArchitected": "Reliability"
+  },
+  "Description": "Basic configuration with simplified parameter set using new naming conventions"
+}

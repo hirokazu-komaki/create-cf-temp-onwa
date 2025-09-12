@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "workflows": {
+    "ci-cd-pipeline-single-account.yml": {
+      "yaml_syntax": true,
+      "workflow_structure": true,
+      "issues": []
+    }
+  },
+  "summary": {
+    "total_workflows": 1,
+    "valid_workflows": 1,
+    "issues_found": []
+  }
+}

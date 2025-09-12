@@ -1,0 +1,29 @@
+{
+  "success": false,
+  "tests": {
+    "aws_credentials": {
+      "success": true,
+      "message": "AWS認証成功 - Account: 432423717699"
+    },
+    "cloudformation_permissions": {
+      "success": false,
+      "message": "予期しないエラー: Parameter validation failed:\nUnknown parameter in input: \"MaxItems\", must be one of: NextToken, StackStatusFilter"
+    },
+    "template_parameter_compatibility": {
+      "success": true,
+      "issues": []
+    },
+    "dry_run_deployment": {
+      "success": false,
+      "message": "スキップ"
+    },
+    "resource_dependencies": {
+      "success": false,
+      "message": "リソース依存関係検証エラー: テンプレート解析が必要"
+    },
+    "security_configuration": {
+      "success": false,
+      "message": "セキュリティ設定検証エラー: テンプレート解析が必要"
+    }
+  }
+}

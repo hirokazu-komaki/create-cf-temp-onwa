@@ -1,0 +1,31 @@
+{
+  "Parameters": {
+    "ConfigurationPattern": "Advanced",
+    "ProjectName": "MyWebApp",
+    "Environment": "staging",
+    "InstanceAMI": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2",
+    "CustomInstanceType": "t3.medium",
+    "KeyPairName": "my-staging-keypair",
+    "VpcId": "vpc-87654321",
+    "SubnetIds": "subnet-12345678,subnet-87654321",
+    "EnableAutoScaling": "true",
+    "CustomMinSize": "2",
+    "CustomMaxSize": "6",
+    "CustomDesiredCapacity": "2",
+    "EnableDetailedMonitoring": "true",
+    "EnableSpotInstances": "true",
+    "TargetGroupArns": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/my-targets/1234567890123456",
+    "RootVolumeSize": "20",
+    "RootVolumeType": "gp3",
+    "EnableEncryption": "true"
+  },
+  "Tags": {
+    "Project": "MyWebApp",
+    "Owner": "Platform Team",
+    "CostCenter": "Engineering",
+    "Environment": "Staging",
+    "WellArchitected": "Performance,Reliability",
+    "MonitoringLevel": "Enhanced"
+  },
+  "Description": "Advanced configuration with performance and reliability parameters, monitoring and scaling optimizations"
+}
